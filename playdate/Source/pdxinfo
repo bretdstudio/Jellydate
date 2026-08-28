@@ -1,0 +1,7 @@
+name=Jellydate
+author=Brett Darnell
+description=A ridiculous Jellyfin client for Playdate.
+bundleID=com.jellydate.client
+version=0.1.0
+buildNumber=1
+

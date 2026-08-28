@@ -1,0 +1,55 @@
+import Fastify, { type FastifyInstance } from 'fastify';
+import type { Config } from './config.js';
+import type { JellyfinClient } from './jellyfin/client.js';
+import { PosterService } from './images/poster.js';
+import type { PlaybackTelemetry } from './telemetry/playback-telemetry.js';
+
+export function buildApp(
+  config: Config,
+  jellyfin: JellyfinClient,
+  telemetry: PlaybackTelemetry,
+): FastifyInstance {
+  const app = Fastify({ logger: { redact: ['req.headers.x-jellydate-token', 'req.headers.authorization'] } });
+  const posters = new PosterService();
+
+  app.get('/health', async () => ({
+    ok: true,
+    service: 'jellydate-bridge',
+    protocolVersion: 1,
+    streamPort: config.streamPort,
+  }));
+
+  app.addHook('onRequest', async (request, reply) => {
+    if (!request.url.startsWith('/api/')) return;
+    if (request.headers['x-jellydate-token'] !== config.jellydateToken) {
+      await reply.code(401).send({ error: 'ACCESS DENIED' });
+    }
+  });
+
+  app.get('/api/home', async () => jellyfin.getHome());
+  app.get('/api/telemetry', async () => telemetry.snapshot());
+  app.get('/api/libraries', async () => ({ items: await jellyfin.getLibraries() }));
+  app.get<{ Params: { id: string }; Querystring: { limit?: string } }>(
+    '/api/libraries/:id/items',
+    async (request) => ({
+      items: await jellyfin.getLibrary(request.params.id, Number(request.query.limit ?? 50)),
+    }),
+  );
+  app.get<{ Params: { id: string } }>('/api/items/:id', async (request) => ({
+    item: await jellyfin.getItem(request.params.id),
+  }));
+  app.get<{ Params: { id: string } }>('/api/items/:id/image', async (request, reply) => {
+    const image = await posters.convert(
+      request.params.id,
+      () => jellyfin.getPrimaryImage(request.params.id),
+    );
+    return reply
+      .header('content-type', 'application/vnd.jellydate.bitmap')
+      .header('x-jellydate-width', '400')
+      .header('x-jellydate-height', '240')
+      .header('cache-control', 'private, max-age=86400')
+      .send(image);
+  });
+
+  return app;
+}

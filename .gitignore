@@ -1,0 +1,12 @@
+.DS_Store
+.env
+bridge/.env
+bridge/node_modules/
+bridge/dist/
+bridge/coverage/
+bridge/soak-results/
+playdate/build/
+playdate/Jellydate.pdx/
+playdate/Source/pdex.*
+playdate/src/config_private.h
+*.pdx.zip

@@ -1,0 +1,43 @@
+# Hardware test log
+
+The project was initially compile-checked against the official Playdate SDK 3.1.1, then installed and exercised on a physical Playdate over USB and Wi-Fi on August 28, 2026.
+
+| Checkpoint | Status | What to record |
+|---|---|---|
+| SDK 3.1.1 device + Simulator compile | Passed, 2026-08-25 | clean ARM and macOS bundles produced; Simulator loaded the C API library without crashing |
+| Simulator network permission | Passed, 2026-08-25 | first-run permission accepted; localhost TCP connection established |
+| Simulator real Jellyfin stream | Passed, 2026-08-25 | moving 400×240 ordered-dithered frames; real-time FFmpeg pacing enabled |
+| Simulator pause/resume | Passed, 2026-08-25 | paused at 00:00:14, TCP remained established, playback resumed |
+| Simulator paused overlay | Passed, 2026-08-25 | frozen video remains visible; title and timeline fit their detected letterbox bars, centered pause plaque clears on resume |
+| Simulator crank scrub overlay | Passed, 2026-08-25 | frozen video remains visible; title-free scrub plaque and letterbox timeline update while turning |
+| Simulator seek buffering overlay | Passed, 2026-08-25 | releasing the crank swaps in a centered buffering plaque; stale frames are ignored until the discontinuous frame from the new position arrives |
+| Simulator scrub while paused | Passed, 2026-08-25 | crank removes the pause/title artwork, scrubs over the cached clean frame, buffers the seek, then returns to paused state on the new frame |
+| Instrumented Simulator soak smoke | Passed, 2026-08-27 | 30 seconds sampled: 420 frames, 4.8 MiB wire data, zero backpressure/report failures, 1.8 MiB RSS growth |
+| Simulator 30-minute soak | Passed, 2026-08-27 | 26,948 frames and 309 MiB streamed; zero backpressure, zero failures, 5.0 MiB RSS growth |
+| Simulator mono audio stream | Passed, 2026-08-27 | actual Jellyfin audio emitted at 22,050 Hz in 40 ms packets; Playdate callback build ran continuously with zero transport backpressure |
+| Instrumented Simulator audio smoke | Passed, 2026-08-27 | 30 seconds sampled: 440 frames, 727 audio packets, 6.3 MiB wire data, zero stalls/backpressure, 4.8 MiB RSS growth |
+| Simulator audio pause/resume | Passed, 2026-08-27 | frame and audio counters froze together during pause and advanced together after resume |
+| Simulator audio seek from pause | Passed, 2026-08-27 | crank seek reset the audio ring, started a new timestamped stream, loaded one discontinuity frame, and returned to pause |
+| Simulator Continue Watching interface | Passed, 2026-08-28 | authenticated compact catalog returned eight real Jellyfin entries in 715 bytes; list rendering, D-pad selection, resume-position playback with A, and B-to-home navigation passed with zero media errors |
+| Simulator post-audio smoothness tuning | Passed, 2026-08-27 | bounded network work, latest-frame presentation, and 120 ms audio lead cap held 14.97 FPS; follow-up 30-second soak sent 433 frames/722 audio packets with zero stalls or backpressure |
+| Simulator monotonic 30 FPS pacing | Passed, 2026-08-27 | replaced FFmpeg catch-up pacing; 30-second soak sent 872 frames/726 audio packets, maximum observed frame gap 83 ms, no gaps over 100 ms, zero backpressure |
+| Simulator audio-master video queue | Passed, 2026-08-27 | eight-frame bounded queue, six-frame/200 ms startup gate, audio-clock frame selection, and 50 Hz scheduler; clean 30-second soak sent 873 frames/727 audio packets with zero steady-state video/audio drops or underruns and 37 ms maximum bridge frame gap |
+| Simulator synchronized A/V endurance | Passed, 2026-08-27 | tuned 15-minute run: 26,869 frames, 22,391 audio packets, 346.3 MiB; zero audio underruns/dropped samples/backpressure, 475 intentionally dropped late video frames (0.3%), 4.9 MiB RSS growth |
+| Physical Playdate connects over LAN | Passed, 2026-08-28 | USB serial `PDU1_Y0210881`; Wi-Fi client `192.168.4.26` connected to bridge `192.168.4.28`, accepted TCP permission, authenticated, and started the configured Jellyfin item |
+| Physical raw full-frame stream | Bandwidth limit identified, 2026-08-28 | 30 FPS began correctly but filled the Mac's 128 KiB TCP send queue after 24 frames; a clean 5 FPS + PCM sample delivered 31 frames/155 audio packets over 20 seconds (6.2 seconds of media), measuring roughly 33 KiB/s of sustainable device receive throughput versus about 104 KiB/s required |
+| Physical efficient A/V stream | Passed, 2026-08-28 | 30 seconds of media advanced in 30 seconds: 180 frames at 6.00 FPS, 750 audio packets, 26.12 KiB/s, zero TCP backpressure, zero video drops, zero audio underruns/drops, and healthy bounded queues |
+| Physical balanced-fidelity A/V stream | Passed, 2026-08-28 | 240×144 at 5 FPS provides 44% more source pixels than the efficient profile; clean 30-second smoke held 5.00 FPS and 25 audio packets/second at about 30.3 KiB/s with zero backpressure, client drops, or underruns and 1.4 MiB bridge RSS growth |
+| Physical native-resolution delta stream | Passed, 2026-08-28 | 400×240 at 4 FPS with two-second keyframes and changed-byte deltas; two-minute content benchmark estimated 29.9 KiB/s, then an uninterrupted one-minute hardware run sent 220 measured frames/1,375 audio packets and 1.4 MiB with zero backpressure, client drops, or underruns and 2.4 MiB bridge RSS growth |
+| Physical adaptive native-resolution stream | Passed, 2026-08-28 | 400×240 targeting 5 FPS with 30-second recovery keys and a 22 KiB/s video budget; one-minute hardware run delivered about 4.6 FPS, 1.2 MiB measured wire traffic, zero backpressure/client drops/underruns, and 5.1 MiB bridge RSS growth |
+| Physical fixed-5 native-resolution stream | Passed, 2026-08-28 | 400×240 at fixed 5 FPS with 30-second keys, literal/repeat deltas, and dithering hysteresis 16; two-minute hardware soak advanced 115.2 seconds across the sampled interval with 576 frames (5.00 FPS), 2.9 MiB/26.2 KiB/s, zero backpressure/client drops/audio drops/underruns, 5.4 MiB peak RSS growth, and a zero-byte final TCP send queue. Applying the TCP read timeout after `open()` and using one bounded full-chunk read per update eliminated the tiny-fragment firmware watchdog stall. |
+| Physical audio output | Passed, 2026-08-28 | user confirmed audible hardware output after repeating the test at the correct device volume; telemetry showed zero underruns and drops during the clean run |
+| Pause/resume | Passed, 2026-08-28 | guided hardware run completed a system-menu volume adjustment and two A-button pause/resume cycles; each returned to fixed 5 FPS with the expected paused presentation and zero video/audio drops or transport backpressure. System lifecycle callbacks now flush control writes without entering the firmware receive path. |
+| Crank forward/back seek | Passed, 2026-08-28 | guided fixed-profile run committed two physical crank seeks, displayed the buffering state, and recovered synchronized 5 FPS video/audio at the new position with zero backpressure, video drops, audio drops, or underruns; scrubbing pauses discarded media and ignores stale audio. |
+| Five-minute thermal/memory check | Passed, 2026-08-28 | guided fixed-5-FPS run advanced continuously for five minutes with zero backpressure, media drops, or underruns, then remained clean through menu lifecycle, two A-button pause/resume cycles, and two crank seeks. Applying the TCP timeout after `open()` while reading no more than the reported available bytes eliminated both tiny-fragment and pause-boundary watchdog stalls. |
+
+## Suggested first session
+
+1. Run the 400×240, 4 FPS delta profile for five minutes, then for a full movie; retain 240×144 and 200×120 as fallbacks.
+2. Confirm physical pause/resume and both forward and backward crank seeks subjectively while telemetry records recovery.
+3. Confirm the Jellyfin dashboard receives start, progress, seek, pause, resume, and stop positions.
+4. Film the movie-on-Playdate moment. This remains scientifically necessary.
