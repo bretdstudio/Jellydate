@@ -31,6 +31,7 @@ export interface JellydateItem {
   readonly indexNumber: number | null;
   readonly parentIndexNumber: number | null;
   readonly childCount: number | null;
+  readonly overview: string;
 }
 
 export interface PlayableSource {
@@ -62,6 +63,7 @@ function compactItem(item: BaseItemDto): JellydateItem | null {
     indexNumber: item.IndexNumber ?? null,
     parentIndexNumber: item.ParentIndexNumber ?? null,
     childCount: item.ChildCount ?? null,
+    overview: item.Overview ?? '',
   };
 }
 

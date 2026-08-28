@@ -33,7 +33,9 @@ typedef enum {
     JD_APP_ERROR,
     JD_APP_MENU,
     JD_APP_CATALOG_LOADING,
-    JD_APP_CATALOG
+    JD_APP_CATALOG,
+    JD_APP_DETAILS_LOADING,
+    JD_APP_DETAILS
 } JDAppMode;
 
 typedef struct {
@@ -46,6 +48,8 @@ typedef struct {
     int play_sent;
     int catalog_requested;
     int catalog_active;
+    int details_requested;
+    int detail_active;
     int catalog_input_armed;
     int catalog_neutral_frames;
     uint8_t catalog_kind;
@@ -77,7 +81,9 @@ typedef struct {
     int catalog_has_more;
     uint16_t catalog_page_start;
     JDHomeItem home_items[JD_HOME_MAX_ITEMS];
+    JDItemDetails detail;
     char item_id[64];
+    char detail_id[64];
     char title[96];
     char status[96];
     char catalog_parent_id[64];
@@ -151,6 +157,21 @@ static void queue_catalog_request(uint8_t kind, const char* parent_id) {
     app.mode = JD_APP_CATALOG_LOADING;
 }
 
+static void queue_details_request(const char* item_id) {
+    uint8_t payload[64];
+    size_t id_length = item_id == NULL ? 0 : strlen(item_id);
+    if (id_length == 0) return;
+    if (id_length > 63) id_length = 63;
+    payload[0] = (uint8_t)id_length;
+    memcpy(payload + 1, item_id, id_length);
+    queue_packet(JD_PACKET_ITEM_DETAILS_REQUEST, payload, (uint32_t)(id_length + 1));
+    app.details_requested = 1;
+    app.catalog_input_armed = 0;
+    app.catalog_neutral_frames = 0;
+    app.catalog_input_unlock_ms = app.pd->system->getCurrentTimeMilliseconds() + 250;
+    app.mode = JD_APP_DETAILS_LOADING;
+}
+
 static int parse_home_items(JDApp* state, const uint8_t* payload, size_t length) {
     size_t cursor = 0;
     int count;
@@ -196,6 +217,67 @@ static int parse_home_items(JDApp* state, const uint8_t* payload, size_t length)
     state->home_count = count;
     if (state->home_selected >= count) state->home_selected = count > 0 ? count - 1 : 0;
     return 1;
+}
+
+static int parse_item_details(JDApp* state, const uint8_t* payload, size_t length) {
+    size_t cursor = 0;
+    size_t copy;
+    uint8_t field_length;
+    uint16_t overview_length;
+    JDItemDetails* detail = &state->detail;
+    memset(detail, 0, sizeof(*detail));
+
+    if (cursor >= length) return 0;
+    field_length = payload[cursor++];
+    if (field_length == 0 || field_length > length - cursor) return 0;
+    copy = field_length < sizeof(detail->title) - 1
+        ? field_length : sizeof(detail->title) - 1;
+    memcpy(detail->title, payload + cursor, copy);
+    detail->title[copy] = '\0';
+    cursor += field_length;
+
+    if (cursor >= length) return 0;
+    field_length = payload[cursor++];
+    if (field_length > length - cursor) return 0;
+    copy = field_length < sizeof(detail->subtitle) - 1
+        ? field_length : sizeof(detail->subtitle) - 1;
+    memcpy(detail->subtitle, payload + cursor, copy);
+    detail->subtitle[copy] = '\0';
+    cursor += field_length;
+
+    if (length - cursor < 2) return 0;
+    overview_length = jd_protocol_read_u16(payload + cursor);
+    cursor += 2;
+    if (overview_length > length - cursor) return 0;
+    copy = overview_length < sizeof(detail->overview) - 1
+        ? overview_length : sizeof(detail->overview) - 1;
+    memcpy(detail->overview, payload + cursor, copy);
+    detail->overview[copy] = '\0';
+    cursor += overview_length;
+
+    if (length - cursor != 16) return 0;
+    detail->position_ms = jd_protocol_read_u64(payload + cursor);
+    detail->duration_ms = jd_protocol_read_u64(payload + cursor + 8);
+    return 1;
+}
+
+static void begin_playback(
+    const char* item_id,
+    uint64_t position_ms,
+    uint64_t duration_ms
+) {
+    snprintf(app.item_id, sizeof(app.item_id), "%s", item_id);
+    app.position_ms = position_ms;
+    app.duration_ms = duration_ms;
+    app.play_sent = 0;
+    app.paused = 0;
+    app.stream_playing = 0;
+    app.pause_after_seek = 0;
+    jd_audio_set_paused(1);
+    jd_audio_reset();
+    jd_video_reset_queue();
+    queue_play();
+    app.mode = JD_APP_BUFFERING;
 }
 
 static void send_client_stats(void) {
@@ -338,6 +420,10 @@ static void on_packet(
             if (strcmp(state->status, "ready") == 0) {
                 if (state->item_id[0] != '\0') {
                     if (!state->play_sent) queue_play();
+                } else if (state->detail_active) {
+                    if (!state->details_requested) {
+                        queue_details_request(state->detail_id);
+                    }
                 } else if (state->catalog_active) {
                     if (!state->catalog_requested) {
                         queue_catalog_request(state->catalog_kind, state->catalog_parent_id);
@@ -375,6 +461,14 @@ static void on_packet(
                 state->mode = JD_APP_ERROR;
             } else {
                 state->mode = JD_APP_CATALOG;
+            }
+            break;
+        case JD_PACKET_ITEM_DETAILS_RESPONSE:
+            if (!parse_item_details(state, payload, header->payload_length)) {
+                snprintf(state->status, sizeof(state->status), "bad item details");
+                state->mode = JD_APP_ERROR;
+            } else {
+                state->mode = JD_APP_DETAILS;
             }
             break;
         case JD_PACKET_END_OF_STREAM:
@@ -450,6 +544,7 @@ int jd_app_update(void* userdata) {
             app.handshake_sent = 0;
             app.play_sent = 0;
             app.catalog_requested = 0;
+            app.details_requested = 0;
             jd_audio_set_paused(1);
             jd_audio_reset();
             jd_video_reset_queue();
@@ -495,6 +590,8 @@ int jd_app_update(void* userdata) {
         if (browse_actions.select) {
             app.catalog_kind = (uint8_t)app.menu_selected;
             app.catalog_active = 1;
+            app.detail_active = 0;
+            app.details_requested = 0;
             app.catalog_requested = 0;
             app.catalog_has_more = 0;
             app.catalog_page_start = 0;
@@ -557,6 +654,7 @@ int jd_app_update(void* userdata) {
             } else {
                 app.catalog_active = 0;
                 app.catalog_requested = 0;
+                app.detail_active = 0;
                 app.mode = JD_APP_MENU;
             }
         } else if (app.home_count > 0 && browse_actions.movement != 0) {
@@ -610,21 +708,44 @@ int jd_app_update(void* userdata) {
                 app.catalog_requested = 0;
                 queue_catalog_request(app.catalog_kind, app.catalog_parent_id);
             } else {
-                snprintf(app.item_id, sizeof(app.item_id), "%s", selected->id);
-                app.position_ms = selected->position_ms;
-                app.duration_ms = selected->duration_ms;
-                app.play_sent = 0;
-                app.paused = 0;
-                app.stream_playing = 0;
-                app.pause_after_seek = 0;
-                jd_audio_set_paused(1);
-                jd_audio_reset();
-                jd_video_reset_queue();
-                queue_play();
-                app.mode = JD_APP_BUFFERING;
+                snprintf(app.detail_id, sizeof(app.detail_id), "%s", selected->id);
+                memset(&app.detail, 0, sizeof(app.detail));
+                snprintf(app.detail.title, sizeof(app.detail.title), "%s", selected->title);
+                app.detail.position_ms = selected->position_ms;
+                app.detail.duration_ms = selected->duration_ms;
+                app.detail_active = 1;
+                app.details_requested = 0;
+                queue_details_request(app.detail_id);
             }
         }
-    } else if (app.mode == JD_APP_CATALOG_LOADING) {
+    } else if (app.mode == JD_APP_DETAILS) {
+        browse_actions = jd_controls_update_browser(&app.controls, app.pd);
+        if (!app.catalog_input_armed) {
+            if (!browse_actions.select_held && !browse_actions.back_held &&
+                !browse_actions.select && !browse_actions.back &&
+                browse_actions.movement == 0) {
+                app.catalog_neutral_frames += 1;
+                if (app.catalog_neutral_frames >= 2) app.catalog_input_armed = 1;
+            } else {
+                app.catalog_neutral_frames = 0;
+            }
+            memset(&browse_actions, 0, sizeof(browse_actions));
+        } else if ((int32_t)(now - app.catalog_input_unlock_ms) < 0) {
+            memset(&browse_actions, 0, sizeof(browse_actions));
+        }
+        if (browse_actions.back) {
+            app.detail_active = 0;
+            app.details_requested = 0;
+            app.mode = JD_APP_CATALOG;
+        } else if (browse_actions.select) {
+            begin_playback(
+                app.detail_id,
+                app.detail.position_ms,
+                app.detail.duration_ms
+            );
+        }
+    } else if (app.mode == JD_APP_CATALOG_LOADING ||
+               app.mode == JD_APP_DETAILS_LOADING) {
         /* Consume button transitions while a catalog request is in flight so
            one A/B press cannot activate two hierarchy levels. */
         (void)jd_controls_update_browser(&app.controls, app.pd);
@@ -646,7 +767,18 @@ int jd_app_update(void* userdata) {
         app.item_id[0] = '\0';
         app.paused = 0;
         app.stream_playing = 0;
-        app.mode = app.catalog_active ? JD_APP_CATALOG : JD_APP_MENU;
+        if (app.detail_active) {
+            app.detail.position_ms = app.position_ms;
+            app.detail.duration_ms = app.duration_ms;
+            if (app.home_selected >= 0 && app.home_selected < app.home_count &&
+                strcmp(app.home_items[app.home_selected].id, app.detail_id) == 0) {
+                app.home_items[app.home_selected].position_ms = app.position_ms;
+                app.home_items[app.home_selected].duration_ms = app.duration_ms;
+            }
+            app.mode = JD_APP_DETAILS;
+        } else {
+            app.mode = app.catalog_active ? JD_APP_CATALOG : JD_APP_MENU;
+        }
     }
     if (actions.scrub_changed &&
         (app.mode == JD_APP_PLAYING || app.mode == JD_APP_PAUSED ||
@@ -728,6 +860,12 @@ int jd_app_update(void* userdata) {
                 app.catalog_title,
                 app.home_items, app.home_count, app.home_selected, 0
             );
+            break;
+        case JD_APP_DETAILS_LOADING:
+            jd_ui_draw_details(&app.detail, 1);
+            break;
+        case JD_APP_DETAILS:
+            jd_ui_draw_details(&app.detail, 0);
             break;
         case JD_APP_PLAYING:
             break;

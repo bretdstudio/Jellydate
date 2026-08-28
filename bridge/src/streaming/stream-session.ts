@@ -12,9 +12,11 @@ import {
 import {
   CatalogKind,
   decodeCatalogRequest,
+  decodeItemDetailsRequest,
   decodePlayCommand,
   decodeClientStats,
   encodeHomeItems,
+  encodeItemDetails,
   encodePacket,
   encodeStreamInfo,
   PacketParser,
@@ -44,6 +46,14 @@ function formatCatalogSubtitle(kind: CatalogKind, item: JellydateItem): string {
   return item.seriesName
     ? [item.seasonName, item.name].filter(Boolean).join(' - ')
     : [item.type, item.productionYear].filter(Boolean).join(' - ');
+}
+
+function formatDetailsSubtitle(item: JellydateItem): string {
+  if (item.type === 'Episode') {
+    const episode = item.indexNumber !== null ? `EPISODE ${item.indexNumber}` : null;
+    return [item.seriesName, item.seasonName, episode].filter(Boolean).join(' - ');
+  }
+  return [item.type, item.productionYear].filter(Boolean).join(' - ');
 }
 
 interface ActiveStream {
@@ -115,6 +125,9 @@ export class StreamSession {
         break;
       case PacketType.HomeRequest:
         await this.sendCatalog(decodeCatalogRequest(packet.payload));
+        break;
+      case PacketType.ItemDetailsRequest:
+        await this.sendItemDetails(decodeItemDetailsRequest(packet.payload));
         break;
       case PacketType.Pause:
         if (this.active) this.pauseActive(this.active);
@@ -202,6 +215,17 @@ export class StreamSession {
         durationMs: BigInt(item.durationMs),
       })), hasMore),
     );
+  }
+
+  private async sendItemDetails(itemId: string): Promise<void> {
+    const item = await this.jellyfin.getItem(itemId);
+    this.send(PacketType.ItemDetailsResponse, encodeItemDetails({
+      title: item.name,
+      subtitle: formatDetailsSubtitle(item),
+      overview: item.overview || 'No description available.',
+      positionMs: BigInt(item.positionMs),
+      durationMs: BigInt(item.durationMs),
+    }));
   }
 
   private async play(command: { itemId: string; startMs: bigint }): Promise<void> {

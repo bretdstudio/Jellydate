@@ -42,6 +42,8 @@ All integers are unsigned and big-endian. Video pixels inside a byte are MSB-fir
 | `1A` | `CLIENT_STATS` | client → Bridge | five u32 buffer/drop counters followed by app mode and audio playhead milliseconds |
 | `20` | `HOME_REQUEST` | client → Bridge | catalog selector plus optional parent id (`0` Continue Watching, `1` Movies, `2` TV series, `3` Recently Added, `4` seasons, `5` episodes) |
 | `21` | `HOME_RESPONSE` | Bridge → client | up to eight entries from the requested catalog with resume metadata |
+| `22` | `ITEM_DETAILS_REQUEST` | client → Bridge | request compact metadata for one Jellyfin item id |
+| `23` | `ITEM_DETAILS_RESPONSE` | Bridge → client | title, context, overview, runtime, and resume position |
 
 Flag bit 0 (`DISCONTINUITY`) means buffered media from the prior timeline must be discarded. It is set on `STREAM_INFO` after play/seek and on the first following keyframe.
 
@@ -50,6 +52,10 @@ Flag bit 0 (`DISCONTINUITY`) means buffered media from the prior timeline must b
 `HOME_REQUEST` begins with `u8 catalog_kind`, followed by `u8 parent_id_length + parent_id`, then a big-endian `u16 start_index`. Root catalogs use a zero-length parent id; seasons require a series id and episodes require a season id. Every catalog advances the index in eight-item pages. Legacy requests that omit the index remain accepted and start at zero.
 
 `HOME_RESPONSE` begins with `u8 item_count` and `u8 catalog_flags`; flag bit 0 means another page exists. Each item then contains three length-prefixed UTF-8 fields—`u8 id_length + id`, `u8 title_length + title`, and `u8 subtitle_length + subtitle`—followed by big-endian `u64 position_ms` and `u64 duration_ms`. The bridge returns at most eight entries. Continue Watching preserves Jellyfin resume positions; Movies and TV series are alphabetized; TV drill-down returns seasons and then playable episodes; and Recently Added mixes new movies and episodes. Additional pages load automatically when navigation crosses a page boundary. All playable entries include any saved position available from Jellyfin user data.
+
+### ITEM_DETAILS payloads
+
+`ITEM_DETAILS_REQUEST` contains `u8 item_id_length + item_id`. `ITEM_DETAILS_RESPONSE` contains `u8 title_length + title`, `u8 subtitle_length + subtitle`, `u16 overview_length + overview`, then big-endian `u64 position_ms` and `u64 duration_ms`. The subtitle provides compact media context such as movie type and year or series, season, and episode number. Playdate uses the saved position to label the primary action `RESUME` and begin playback at that point.
 
 ### VIDEO_DELTA payload
 

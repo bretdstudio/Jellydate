@@ -13,6 +13,14 @@ typedef struct {
     uint64_t duration_ms;
 } JDHomeItem;
 
+typedef struct {
+    char title[96];
+    char subtitle[96];
+    char overview[512];
+    uint64_t position_ms;
+    uint64_t duration_ms;
+} JDItemDetails;
+
 void jd_ui_init(PlaydateAPI* playdate);
 void jd_ui_shutdown(void);
 void jd_ui_draw_tuning(const char* detail);
@@ -24,6 +32,7 @@ void jd_ui_draw_catalog(
     int selected,
     int loading
 );
+void jd_ui_draw_details(const JDItemDetails* details, int loading);
 void jd_ui_draw_error(const char* detail);
 void jd_ui_draw_paused_overlay(
     const char* title, uint64_t position_ms, uint64_t duration_ms,

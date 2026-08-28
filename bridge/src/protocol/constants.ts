@@ -33,6 +33,8 @@ export enum PacketType {
   ClientStats = 0x1a,
   HomeRequest = 0x20,
   HomeResponse = 0x21,
+  ItemDetailsRequest = 0x22,
+  ItemDetailsResponse = 0x23,
 }
 
 export enum PacketFlags {

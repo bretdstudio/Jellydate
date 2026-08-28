@@ -3,9 +3,12 @@ import { AudioSampleFormat, PacketFlags, PacketType } from '../src/protocol/cons
 import {
   CatalogKind,
   decodeCatalogRequest,
+  decodeItemDetailsRequest,
   decodePlayCommand,
   decodeClientStats,
   encodeHomeItems,
+  encodeItemDetails,
+  encodeItemDetailsRequest,
   encodePacket,
   encodePlayCommand,
   encodeStreamInfo,
@@ -89,6 +92,34 @@ describe('Jellydate packet protocol', () => {
 
   it('marks catalog responses that have another page', () => {
     expect(encodeHomeItems([], true)).toEqual(Buffer.from([0, 1]));
+  });
+
+  it('encodes item details and validates detail requests', () => {
+    const request = encodeItemDetailsRequest('movie-id');
+    expect(decodeItemDetailsRequest(request)).toBe('movie-id');
+    expect(() => decodeItemDetailsRequest(Buffer.from([4, 1]))).toThrow(/length/);
+
+    const payload = encodeItemDetails({
+      title: 'The Jelly Files',
+      subtitle: 'Movie - 2026',
+      overview: 'A tiny television attempts the impossible.',
+      positionMs: 12_345n,
+      durationMs: 98_765n,
+    });
+    let cursor = 0;
+    const titleLength = payload.readUInt8(cursor++);
+    expect(payload.toString('utf8', cursor, cursor + titleLength)).toBe('The Jelly Files');
+    cursor += titleLength;
+    const subtitleLength = payload.readUInt8(cursor++);
+    expect(payload.toString('utf8', cursor, cursor + subtitleLength)).toBe('Movie - 2026');
+    cursor += subtitleLength;
+    const overviewLength = payload.readUInt16BE(cursor);
+    cursor += 2;
+    expect(payload.toString('utf8', cursor, cursor + overviewLength))
+      .toBe('A tiny television attempts the impossible.');
+    cursor += overviewLength;
+    expect(payload.readBigUInt64BE(cursor)).toBe(12_345n);
+    expect(payload.readBigUInt64BE(cursor + 8)).toBe(98_765n);
   });
 
   it('includes the media title in STREAM_INFO', () => {

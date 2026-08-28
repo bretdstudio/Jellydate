@@ -16,6 +16,16 @@ static void text_centered(const char* text, int y) {
     pd->graphics->drawText(text, strlen(text), kUTF8Encoding, (400 - width) / 2, y);
 }
 
+static void loading_data(int y) {
+    static const char* frames[] = {
+        "Loading data.",
+        "Loading data..",
+        "Loading data..."
+    };
+    uint32_t phase = (pd->system->getCurrentTimeMilliseconds() / 250) % 3;
+    text_centered(frames[phase], y);
+}
+
 static void antenna(int x, int y) {
     pd->graphics->drawLine(x, y, x - 13, y - 18, 2, kColorBlack);
     pd->graphics->drawLine(x, y, x + 13, y - 18, 2, kColorBlack);
@@ -178,13 +188,7 @@ void jd_ui_draw_catalog(
         12, 35, 376, 18, kWrapClip, kAlignTextLeft
     );
     if (loading) {
-        static const char* frames[] = {
-            "Loading data.",
-            "Loading data..",
-            "Loading data..."
-        };
-        uint32_t phase = (pd->system->getCurrentTimeMilliseconds() / 250) % 3;
-        text_centered(frames[phase], 112);
+        loading_data(112);
         return;
     }
     if (count <= 0) {
@@ -209,6 +213,46 @@ void jd_ui_draw_catalog(
     }
     pd->graphics->drawText("A: SELECT B: BACK", 17, kUTF8Encoding, 12, 222);
     pd->graphics->drawText("CRANK: TUNE", 11, kUTF8Encoding, 275, 222);
+}
+
+void jd_ui_draw_details(const JDItemDetails* details, int loading) {
+    char position[16];
+    char duration[16];
+    int duration_width;
+    const char* action;
+
+    pd->graphics->clear(kColorWhite);
+    pd->graphics->drawText("JELLYDATE", 9, kUTF8Encoding, 12, 7);
+    pd->graphics->drawLine(12, 28, 388, 28, 2, kColorBlack);
+    if (loading) {
+        scaled_text(details->title, 12, 38, 376, TITLE_TEXT_SCALE);
+        loading_data(112);
+        return;
+    }
+
+    scaled_text(details->title, 12, 36, 376, TITLE_TEXT_SCALE);
+    scaled_text(details->subtitle, 12, 61, 376, META_TEXT_SCALE);
+    progress(20, 84, 360, 7, details->position_ms, details->duration_ms);
+    format_time(position, sizeof(position), details->position_ms);
+    format_time(duration, sizeof(duration), details->duration_ms);
+    duration_width = pd->graphics->getTextWidth(
+        NULL, duration, strlen(duration), kUTF8Encoding, 0
+    );
+    pd->graphics->drawText(position, strlen(position), kUTF8Encoding, 20, 96);
+    pd->graphics->drawText(
+        duration, strlen(duration), kUTF8Encoding,
+        380 - duration_width, 96
+    );
+    pd->graphics->drawText("ABOUT", 5, kUTF8Encoding, 12, 121);
+    pd->graphics->drawLine(12, 140, 388, 140, 1, kColorBlack);
+    pd->graphics->drawTextInRect(
+        details->overview, strlen(details->overview), kUTF8Encoding,
+        12, 146, 376, 65, kWrapWord, kAlignTextLeft
+    );
+
+    action = details->position_ms > 0 ? "A: RESUME" : "A: WATCH";
+    pd->graphics->drawText(action, strlen(action), kUTF8Encoding, 12, 222);
+    pd->graphics->drawText("B: BACK", 7, kUTF8Encoding, 316, 222);
 }
 
 void jd_ui_draw_error(const char* detail) {

@@ -139,6 +139,50 @@ export function encodeHomeItems(items: readonly HomeItem[], hasMore = false): Bu
   return Buffer.concat([Buffer.from([encoded.length, hasMore ? 1 : 0]), ...encoded]);
 }
 
+export interface ItemDetails {
+  readonly title: string;
+  readonly subtitle: string;
+  readonly overview: string;
+  readonly positionMs: bigint;
+  readonly durationMs: bigint;
+}
+
+export function encodeItemDetailsRequest(itemId: string): Buffer {
+  const id = truncateUtf8(itemId, 63);
+  if (id.length === 0) throw new Error('Item id is empty');
+  return Buffer.concat([Buffer.from([id.length]), id]);
+}
+
+export function decodeItemDetailsRequest(payload: Buffer): string {
+  if (payload.length < 2) throw new Error('ITEM_DETAILS_REQUEST payload is truncated');
+  const idLength = payload.readUInt8(0);
+  if (idLength === 0 || payload.length !== idLength + 1) {
+    throw new Error('ITEM_DETAILS_REQUEST item id has invalid length');
+  }
+  return payload.toString('utf8', 1);
+}
+
+export function encodeItemDetails(details: ItemDetails): Buffer {
+  const title = truncateUtf8(details.title, 95);
+  const subtitle = truncateUtf8(details.subtitle, 95);
+  const overview = truncateUtf8(details.overview, 511);
+  const payload = Buffer.allocUnsafe(1 + title.length + 1 + subtitle.length + 2 + overview.length + 16);
+  let cursor = 0;
+  payload.writeUInt8(title.length, cursor++);
+  title.copy(payload, cursor);
+  cursor += title.length;
+  payload.writeUInt8(subtitle.length, cursor++);
+  subtitle.copy(payload, cursor);
+  cursor += subtitle.length;
+  payload.writeUInt16BE(overview.length, cursor);
+  cursor += 2;
+  overview.copy(payload, cursor);
+  cursor += overview.length;
+  payload.writeBigUInt64BE(details.positionMs, cursor);
+  payload.writeBigUInt64BE(details.durationMs, cursor + 8);
+  return payload;
+}
+
 export interface ClientStats {
   readonly queuedVideoFrames: number;
   readonly droppedVideoFrames: number;
