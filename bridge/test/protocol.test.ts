@@ -81,6 +81,9 @@ describe('Jellydate packet protocol', () => {
     ]))).toEqual({ kind: CatalogKind.Movies, parentId: 'M', startIndex: 24 });
     expect(decodeCatalogRequest(Buffer.from([CatalogKind.Tv])))
       .toEqual({ kind: CatalogKind.Tv, parentId: '', startIndex: 0 });
+    expect(decodeCatalogRequest(Buffer.from([
+      CatalogKind.Tv, 1, ...Buffer.from('S'), 0, 8,
+    ]))).toEqual({ kind: CatalogKind.Tv, parentId: 'S', startIndex: 8 });
     expect(decodeCatalogRequest(Buffer.from([CatalogKind.RecentlyAdded])))
       .toEqual({ kind: CatalogKind.RecentlyAdded, parentId: '', startIndex: 0 });
     expect(decodeCatalogRequest(Buffer.from([CatalogKind.TvSeasons, 6, ...Buffer.from('series')])))

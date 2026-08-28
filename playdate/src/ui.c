@@ -215,12 +215,12 @@ void jd_ui_draw_catalog(
     pd->graphics->drawText("CRANK: TUNE", 11, kUTF8Encoding, 275, 222);
 }
 
-void jd_ui_draw_movie_index(int selected) {
+void jd_ui_draw_alpha_index(const char* heading, int selected) {
     int index;
     pd->graphics->clear(kColorWhite);
     pd->graphics->drawText("JELLYDATE", 9, kUTF8Encoding, 12, 7);
     pd->graphics->drawLine(12, 28, 388, 28, 2, kColorBlack);
-    pd->graphics->drawText("MOVIES A-Z", 10, kUTF8Encoding, 12, 35);
+    pd->graphics->drawText(heading, strlen(heading), kUTF8Encoding, 12, 35);
 
     for (index = 0; index < 27; index += 1) {
         char label[2];

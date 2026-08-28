@@ -184,7 +184,7 @@ export class StreamSession {
         source = await this.jellyfin.getMovies(9, startIndex, parentId);
         break;
       case CatalogKind.Tv:
-        source = await this.jellyfin.getTvSeries(9, startIndex);
+        source = await this.jellyfin.getTvSeries(9, startIndex, parentId);
         break;
       case CatalogKind.TvSeasons:
         if (!parentId) throw new Error('TV seasons require a series id');

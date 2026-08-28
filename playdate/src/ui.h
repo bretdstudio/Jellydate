@@ -25,7 +25,7 @@ void jd_ui_init(PlaydateAPI* playdate);
 void jd_ui_shutdown(void);
 void jd_ui_draw_tuning(const char* detail);
 void jd_ui_draw_menu(int selected);
-void jd_ui_draw_movie_index(int selected);
+void jd_ui_draw_alpha_index(const char* heading, int selected);
 void jd_ui_draw_catalog(
     const char* heading,
     const JDHomeItem* items,

@@ -71,6 +71,16 @@ function compactItems(items: BaseItemDto[] | null | undefined): JellydateItem[] 
   return (items ?? []).map(compactItem).filter((item): item is JellydateItem => item !== null);
 }
 
+function alphabetBucket(bucket: string): {
+  readonly nameStartsWith?: string;
+  readonly nameLessThan?: string;
+} {
+  const normalized = bucket.toUpperCase();
+  if (/^[A-Z]$/.test(normalized)) return { nameStartsWith: normalized };
+  if (normalized === '#') return { nameLessThan: 'A' };
+  return {};
+}
+
 export class JellyfinClient {
   private readonly api: Api;
   private userId = '';
@@ -159,8 +169,7 @@ export class JellyfinClient {
     const boundedLimit = Number.isFinite(limit)
       ? Math.min(Math.max(Math.floor(limit), 1), 100)
       : 8;
-    const normalizedBucket = bucket.toUpperCase();
-    const letter = /^[A-Z]$/.test(normalizedBucket) ? normalizedBucket : undefined;
+    const filter = alphabetBucket(bucket);
     const response = await getItemsApi(this.api).getItems({
       userId: this.currentUser.id,
       limit: boundedLimit,
@@ -172,16 +181,16 @@ export class JellyfinClient {
       enableImages: true,
       enableUserData: true,
       enableTotalRecordCount: false,
-      nameStartsWith: letter,
-      nameLessThan: normalizedBucket === '#' ? 'A' : undefined,
+      ...filter,
     });
     return compactItems(response.data.Items);
   }
 
-  async getTvSeries(limit = 8, startIndex = 0): Promise<JellydateItem[]> {
+  async getTvSeries(limit = 8, startIndex = 0, bucket = ''): Promise<JellydateItem[]> {
     const boundedLimit = Number.isFinite(limit)
       ? Math.min(Math.max(Math.floor(limit), 1), 100)
       : 8;
+    const filter = alphabetBucket(bucket);
     const response = await getItemsApi(this.api).getItems({
       userId: this.currentUser.id,
       limit: boundedLimit,
@@ -192,6 +201,8 @@ export class JellyfinClient {
       sortOrder: ['Ascending'],
       enableImages: true,
       enableUserData: true,
+      enableTotalRecordCount: false,
+      ...filter,
     });
     return compactItems(response.data.Items);
   }
