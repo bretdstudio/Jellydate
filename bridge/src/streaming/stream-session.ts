@@ -32,9 +32,7 @@ const MAX_AUDIO_LEAD_MS = 120n;
 
 function formatCatalogSubtitle(kind: CatalogKind, item: JellydateItem): string {
   if (kind === CatalogKind.Tv) {
-    return item.childCount !== null
-      ? `${item.childCount} SEASONS`
-      : ['TV SERIES', item.productionYear].filter(Boolean).join(' - ');
+    return item.productionYear?.toString() ?? '';
   }
   if (kind === CatalogKind.TvSeasons) {
     return item.childCount !== null ? `${item.childCount} EPISODES` : 'SEASON';
