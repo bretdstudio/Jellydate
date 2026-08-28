@@ -138,7 +138,6 @@ void jd_ui_draw_menu(int selected) {
     pd->graphics->clear(kColorWhite);
     pd->graphics->drawText("JELLYDATE", 9, kUTF8Encoding, 12, 7);
     pd->graphics->drawLine(12, 28, 388, 28, 2, kColorBlack);
-    pd->graphics->drawText("HOME", 4, kUTF8Encoding, 12, 35);
     for (index = 0; index < 4; index += 1) {
         int x = 7 + (index % 2) * 195;
         int y = 57 + (index / 2) * 75;
