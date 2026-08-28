@@ -24,6 +24,8 @@ typedef struct {
     int vertical;
     int select;
     int back;
+    int select_held;
+    int back_held;
 } JDBrowseActions;
 
 void jd_controls_init(JDControls* controls);

@@ -28,7 +28,13 @@ export function buildApp(
 
   app.get('/api/home', async () => jellyfin.getHome());
   app.get('/api/movies', async () => ({ items: await jellyfin.getMovies(50) }));
-  app.get('/api/tv', async () => ({ items: await jellyfin.getTvEpisodes(50) }));
+  app.get('/api/tv', async () => ({ items: await jellyfin.getTvSeries(50) }));
+  app.get<{ Params: { id: string } }>('/api/tv/:id/seasons', async (request) => ({
+    items: await jellyfin.getSeasons(request.params.id, 50),
+  }));
+  app.get<{ Params: { id: string } }>('/api/tv/seasons/:id/episodes', async (request) => ({
+    items: await jellyfin.getEpisodes(request.params.id, 50),
+  }));
   app.get('/api/telemetry', async () => telemetry.snapshot());
   app.get('/api/libraries', async () => ({ items: await jellyfin.getLibraries() }));
   app.get<{ Params: { id: string }; Querystring: { limit?: string } }>(

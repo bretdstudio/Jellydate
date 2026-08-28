@@ -87,15 +87,27 @@ export enum CatalogKind {
   Movies = 1,
   Tv = 2,
   RecentlyAdded = 3,
+  TvSeasons = 4,
+  TvEpisodes = 5,
 }
 
-export function decodeCatalogRequest(payload: Buffer): CatalogKind {
-  if (payload.length !== 1) throw new Error('HOME_REQUEST payload must be 1 byte');
+export interface CatalogRequest {
+  readonly kind: CatalogKind;
+  readonly parentId: string;
+}
+
+export function decodeCatalogRequest(payload: Buffer): CatalogRequest {
+  if (payload.length < 1) throw new Error('HOME_REQUEST payload is empty');
   const kind = payload.readUInt8(0);
-  if (kind < CatalogKind.ContinueWatching || kind > CatalogKind.RecentlyAdded) {
+  if (kind < CatalogKind.ContinueWatching || kind > CatalogKind.TvEpisodes) {
     throw new Error(`Unknown catalog kind ${kind}`);
   }
-  return kind;
+  if (payload.length === 1) return { kind, parentId: '' };
+  const parentLength = payload.readUInt8(1);
+  if (payload.length !== 2 + parentLength) {
+    throw new Error('HOME_REQUEST parent id has invalid length');
+  }
+  return { kind, parentId: payload.toString('utf8', 2) };
 }
 
 export function encodeHomeItems(items: readonly HomeItem[]): Buffer {

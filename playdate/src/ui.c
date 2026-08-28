@@ -174,7 +174,10 @@ void jd_ui_draw_catalog(
     pd->graphics->clear(kColorWhite);
     pd->graphics->drawText("JELLYDATE", 9, kUTF8Encoding, 12, 7);
     pd->graphics->drawLine(12, 28, 388, 28, 2, kColorBlack);
-    pd->graphics->drawText(heading, strlen(heading), kUTF8Encoding, 12, 35);
+    pd->graphics->drawTextInRect(
+        heading, strlen(heading), kUTF8Encoding,
+        12, 35, 376, 18, kWrapClip, kAlignTextLeft
+    );
     if (loading) {
         text_centered("consulting the jelly oracle...", 112);
         return;
@@ -199,7 +202,7 @@ void jd_ui_draw_catalog(
         scaled_text(item->subtitle, 29, y + 23, 350, META_TEXT_SCALE);
         progress(292, y + 40, 87, 5, item->position_ms, item->duration_ms);
     }
-    pd->graphics->drawText("A: WATCH  B: BACK", 17, kUTF8Encoding, 12, 222);
+    pd->graphics->drawText("A: SELECT B: BACK", 17, kUTF8Encoding, 12, 222);
     pd->graphics->drawText("CRANK: TUNE", 11, kUTF8Encoding, 275, 222);
 }
 

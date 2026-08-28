@@ -69,14 +69,19 @@ describe('Jellydate packet protocol', () => {
 
   it('decodes catalog requests and rejects unknown catalogs', () => {
     expect(decodeCatalogRequest(Buffer.from([CatalogKind.ContinueWatching])))
-      .toBe(CatalogKind.ContinueWatching);
-    expect(decodeCatalogRequest(Buffer.from([CatalogKind.Movies])))
-      .toBe(CatalogKind.Movies);
+      .toEqual({ kind: CatalogKind.ContinueWatching, parentId: '' });
+    expect(decodeCatalogRequest(Buffer.from([CatalogKind.Movies, 0])))
+      .toEqual({ kind: CatalogKind.Movies, parentId: '' });
     expect(decodeCatalogRequest(Buffer.from([CatalogKind.Tv])))
-      .toBe(CatalogKind.Tv);
+      .toEqual({ kind: CatalogKind.Tv, parentId: '' });
     expect(decodeCatalogRequest(Buffer.from([CatalogKind.RecentlyAdded])))
-      .toBe(CatalogKind.RecentlyAdded);
-    expect(() => decodeCatalogRequest(Buffer.alloc(0))).toThrow(/1 byte/);
+      .toEqual({ kind: CatalogKind.RecentlyAdded, parentId: '' });
+    expect(decodeCatalogRequest(Buffer.from([CatalogKind.TvSeasons, 6, ...Buffer.from('series')])))
+      .toEqual({ kind: CatalogKind.TvSeasons, parentId: 'series' });
+    expect(decodeCatalogRequest(Buffer.from([CatalogKind.TvEpisodes, 6, ...Buffer.from('season')])))
+      .toEqual({ kind: CatalogKind.TvEpisodes, parentId: 'season' });
+    expect(() => decodeCatalogRequest(Buffer.alloc(0))).toThrow(/empty/);
+    expect(() => decodeCatalogRequest(Buffer.from([CatalogKind.TvSeasons, 4, 1]))).toThrow(/length/);
     expect(() => decodeCatalogRequest(Buffer.from([99]))).toThrow(/Unknown catalog/);
   });
 

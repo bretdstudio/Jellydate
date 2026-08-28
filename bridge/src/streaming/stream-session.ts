@@ -2,7 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import type { Socket } from 'node:net';
 import { once } from 'node:events';
 import type { Config } from '../config.js';
-import type { JellyfinClient, PlayableSource } from '../jellyfin/client.js';
+import type { JellydateItem, JellyfinClient, PlayableSource } from '../jellyfin/client.js';
 import {
   AudioSampleFormat,
   HEADER_SIZE,
@@ -19,6 +19,7 @@ import {
   encodeStreamInfo,
   PacketParser,
   type Packet,
+  type CatalogRequest,
 } from '../protocol/packet.js';
 import { orderedDither8x8 } from '../transcoder/dither.js';
 import { encodeFrameDelta } from '../transcoder/delta.js';
@@ -28,6 +29,24 @@ import { WireBudget } from './wire-budget.js';
 
 const AUDIO_CHUNK_DURATION_MS = 40;
 const MAX_AUDIO_LEAD_MS = 120n;
+
+function formatCatalogSubtitle(kind: CatalogKind, item: JellydateItem): string {
+  if (kind === CatalogKind.Tv) {
+    return item.childCount !== null
+      ? `${item.childCount} SEASONS`
+      : ['TV SERIES', item.productionYear].filter(Boolean).join(' - ');
+  }
+  if (kind === CatalogKind.TvSeasons) {
+    return item.childCount !== null ? `${item.childCount} EPISODES` : 'SEASON';
+  }
+  if (kind === CatalogKind.TvEpisodes) {
+    const number = item.indexNumber !== null ? `EPISODE ${item.indexNumber}` : 'EPISODE';
+    return item.positionMs > 0 ? `${number} - RESUME` : number;
+  }
+  return item.seriesName
+    ? [item.seasonName, item.name].filter(Boolean).join(' - ')
+    : [item.type, item.productionYear].filter(Boolean).join(' - ');
+}
 
 interface ActiveStream {
   readonly generation: number;
@@ -146,14 +165,23 @@ export class StreamSession {
     this.send(PacketType.PlaybackState, Buffer.from('ready'));
   }
 
-  private async sendCatalog(kind: CatalogKind): Promise<void> {
+  private async sendCatalog(request: CatalogRequest): Promise<void> {
+    const { kind, parentId } = request;
     let source;
     switch (kind) {
       case CatalogKind.Movies:
         source = await this.jellyfin.getMovies(8);
         break;
       case CatalogKind.Tv:
-        source = await this.jellyfin.getTvEpisodes(8);
+        source = await this.jellyfin.getTvSeries(8);
+        break;
+      case CatalogKind.TvSeasons:
+        if (!parentId) throw new Error('TV seasons require a series id');
+        source = await this.jellyfin.getSeasons(parentId, 8);
+        break;
+      case CatalogKind.TvEpisodes:
+        if (!parentId) throw new Error('TV episodes require a season id');
+        source = await this.jellyfin.getEpisodes(parentId, 8);
         break;
       case CatalogKind.RecentlyAdded:
         source = (await this.jellyfin.getHome()).recentlyAdded;
@@ -166,10 +194,10 @@ export class StreamSession {
       PacketType.HomeResponse,
       encodeHomeItems(source.slice(0, 8).map((item) => ({
         id: item.id,
-        title: item.seriesName ?? item.name,
-        subtitle: item.seriesName
-          ? [item.seasonName, item.name].filter(Boolean).join(' - ')
-          : [item.type, item.productionYear].filter(Boolean).join(' - '),
+        title: kind === CatalogKind.TvSeasons || kind === CatalogKind.TvEpisodes
+          ? item.name
+          : (item.seriesName ?? item.name),
+        subtitle: formatCatalogSubtitle(kind, item),
         positionMs: BigInt(item.positionMs),
         durationMs: BigInt(item.durationMs),
       }))),

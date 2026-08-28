@@ -28,6 +28,9 @@ export interface JellydateItem {
   readonly imageTag: string | null;
   readonly seriesName: string | null;
   readonly seasonName: string | null;
+  readonly indexNumber: number | null;
+  readonly parentIndexNumber: number | null;
+  readonly childCount: number | null;
 }
 
 export interface PlayableSource {
@@ -56,6 +59,9 @@ function compactItem(item: BaseItemDto): JellydateItem | null {
     imageTag: item.ImageTags?.Primary ?? item.SeriesPrimaryImageTag ?? null,
     seriesName: item.SeriesName ?? null,
     seasonName: item.SeasonName ?? null,
+    indexNumber: item.IndexNumber ?? null,
+    parentIndexNumber: item.ParentIndexNumber ?? null,
+    childCount: item.ChildCount ?? null,
   };
 }
 
@@ -150,7 +156,7 @@ export class JellyfinClient {
     return compactItems(response.data.Items);
   }
 
-  async getTvEpisodes(limit = 8): Promise<JellydateItem[]> {
+  async getTvSeries(limit = 8): Promise<JellydateItem[]> {
     const boundedLimit = Number.isFinite(limit)
       ? Math.min(Math.max(Math.floor(limit), 1), 100)
       : 8;
@@ -158,9 +164,39 @@ export class JellyfinClient {
       userId: this.currentUser.id,
       limit: boundedLimit,
       recursive: true,
-      includeItemTypes: ['Episode'],
-      sortBy: ['DateCreated'],
-      sortOrder: ['Descending'],
+      includeItemTypes: ['Series'],
+      sortBy: ['SortName'],
+      sortOrder: ['Ascending'],
+      enableImages: true,
+      enableUserData: true,
+    });
+    return compactItems(response.data.Items);
+  }
+
+  async getSeasons(seriesId: string, limit = 50): Promise<JellydateItem[]> {
+    return this.getChildren(seriesId, ['Season'], limit);
+  }
+
+  async getEpisodes(seasonId: string, limit = 50): Promise<JellydateItem[]> {
+    return this.getChildren(seasonId, ['Episode'], limit);
+  }
+
+  private async getChildren(
+    parentId: string,
+    includeItemTypes: Array<'Season' | 'Episode'>,
+    limit: number,
+  ): Promise<JellydateItem[]> {
+    const boundedLimit = Number.isFinite(limit)
+      ? Math.min(Math.max(Math.floor(limit), 1), 100)
+      : 50;
+    const response = await getItemsApi(this.api).getItems({
+      userId: this.currentUser.id,
+      parentId,
+      limit: boundedLimit,
+      recursive: false,
+      includeItemTypes,
+      sortBy: ['SortName'],
+      sortOrder: ['Ascending'],
       enableImages: true,
       enableUserData: true,
     });

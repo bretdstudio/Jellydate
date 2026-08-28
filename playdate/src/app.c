@@ -18,6 +18,8 @@
 #define JD_CATALOG_MOVIES 1
 #define JD_CATALOG_TV 2
 #define JD_CATALOG_RECENTLY_ADDED 3
+#define JD_CATALOG_TV_SEASONS 4
+#define JD_CATALOG_TV_EPISODES 5
 #define JD_MENU_ITEM_COUNT 4
 
 typedef enum {
@@ -44,6 +46,8 @@ typedef struct {
     int play_sent;
     int catalog_requested;
     int catalog_active;
+    int catalog_input_armed;
+    int catalog_neutral_frames;
     uint8_t catalog_kind;
     int paused;
     int scrub_started_paused;
@@ -56,6 +60,7 @@ typedef struct {
     uint32_t command_sequence;
     uint32_t last_stats_ms;
     uint32_t reconnect_at_ms;
+    uint32_t catalog_input_unlock_ms;
     uint64_t position_ms;
     uint64_t duration_ms;
     uint16_t video_x;
@@ -65,10 +70,18 @@ typedef struct {
     int home_count;
     int home_selected;
     int menu_selected;
+    int tv_series_selected;
+    int tv_season_selected;
     JDHomeItem home_items[JD_HOME_MAX_ITEMS];
     char item_id[64];
     char title[96];
     char status[96];
+    char catalog_parent_id[64];
+    char catalog_title[96];
+    char tv_series_id[64];
+    char tv_series_title[96];
+    char tv_season_id[64];
+    char tv_season_title[96];
 } JDApp;
 
 static JDApp app;
@@ -117,9 +130,18 @@ static const char* catalog_heading(uint8_t kind) {
     return "CONTINUE WATCHING";
 }
 
-static void queue_catalog_request(uint8_t kind) {
-    queue_packet(JD_PACKET_HOME_REQUEST, &kind, 1);
+static void queue_catalog_request(uint8_t kind, const char* parent_id) {
+    uint8_t payload[66];
+    size_t parent_length = parent_id == NULL ? 0 : strlen(parent_id);
+    if (parent_length > 63) parent_length = 63;
+    payload[0] = kind;
+    payload[1] = (uint8_t)parent_length;
+    if (parent_length > 0) memcpy(payload + 2, parent_id, parent_length);
+    queue_packet(JD_PACKET_HOME_REQUEST, payload, (uint32_t)(2 + parent_length));
     app.catalog_requested = 1;
+    app.catalog_input_armed = 0;
+    app.catalog_neutral_frames = 0;
+    app.catalog_input_unlock_ms = app.pd->system->getCurrentTimeMilliseconds() + 250;
     app.mode = JD_APP_CATALOG_LOADING;
 }
 
@@ -310,7 +332,9 @@ static void on_packet(
                 if (state->item_id[0] != '\0') {
                     if (!state->play_sent) queue_play();
                 } else if (state->catalog_active) {
-                    if (!state->catalog_requested) queue_catalog_request(state->catalog_kind);
+                    if (!state->catalog_requested) {
+                        queue_catalog_request(state->catalog_kind, state->catalog_parent_id);
+                    }
                 } else {
                     state->mode = JD_APP_MENU;
                 }
@@ -466,36 +490,107 @@ int jd_app_update(void* userdata) {
             app.catalog_active = 1;
             app.catalog_requested = 0;
             app.home_selected = 0;
-            queue_catalog_request(app.catalog_kind);
+            app.catalog_parent_id[0] = '\0';
+            snprintf(
+                app.catalog_title, sizeof(app.catalog_title), "%s",
+                catalog_heading(app.catalog_kind)
+            );
+            if (app.catalog_kind == JD_CATALOG_TV) {
+                app.tv_series_id[0] = '\0';
+                app.tv_season_id[0] = '\0';
+                app.tv_series_selected = 0;
+                app.tv_season_selected = 0;
+            }
+            queue_catalog_request(app.catalog_kind, app.catalog_parent_id);
         }
     } else if (app.mode == JD_APP_CATALOG) {
         browse_actions = jd_controls_update_browser(&app.controls, app.pd);
-        if (browse_actions.back) {
-            app.catalog_active = 0;
-            app.catalog_requested = 0;
-            app.mode = JD_APP_MENU;
+        if (!app.catalog_input_armed) {
+            if (!browse_actions.select_held && !browse_actions.back_held &&
+                !browse_actions.select && !browse_actions.back &&
+                browse_actions.movement == 0) {
+                app.catalog_neutral_frames += 1;
+                if (app.catalog_neutral_frames >= 2) app.catalog_input_armed = 1;
+            } else {
+                app.catalog_neutral_frames = 0;
+            }
+            memset(&browse_actions, 0, sizeof(browse_actions));
+        } else if ((int32_t)(now - app.catalog_input_unlock_ms) < 0) {
+            memset(&browse_actions, 0, sizeof(browse_actions));
         }
-        if (app.home_count > 0 && browse_actions.movement != 0) {
+        if (browse_actions.back) {
+            if (app.catalog_kind == JD_CATALOG_TV_EPISODES) {
+                app.catalog_kind = JD_CATALOG_TV_SEASONS;
+                snprintf(
+                    app.catalog_parent_id, sizeof(app.catalog_parent_id), "%s",
+                    app.tv_series_id
+                );
+                snprintf(
+                    app.catalog_title, sizeof(app.catalog_title), "%s",
+                    app.tv_series_title
+                );
+                app.home_selected = app.tv_season_selected;
+                app.catalog_requested = 0;
+                queue_catalog_request(app.catalog_kind, app.catalog_parent_id);
+            } else if (app.catalog_kind == JD_CATALOG_TV_SEASONS) {
+                app.catalog_kind = JD_CATALOG_TV;
+                app.catalog_parent_id[0] = '\0';
+                snprintf(app.catalog_title, sizeof(app.catalog_title), "TV SHOWS");
+                app.home_selected = app.tv_series_selected;
+                app.catalog_requested = 0;
+                queue_catalog_request(app.catalog_kind, app.catalog_parent_id);
+            } else {
+                app.catalog_active = 0;
+                app.catalog_requested = 0;
+                app.mode = JD_APP_MENU;
+            }
+        } else if (app.home_count > 0 && browse_actions.movement != 0) {
             app.home_selected += browse_actions.movement;
             while (app.home_selected < 0) app.home_selected += app.home_count;
             while (app.home_selected >= app.home_count) app.home_selected -= app.home_count;
         }
         if (!browse_actions.back && app.home_count > 0 && browse_actions.select) {
             JDHomeItem* selected = &app.home_items[app.home_selected];
-            snprintf(app.item_id, sizeof(app.item_id), "%s", selected->id);
-            app.position_ms = selected->position_ms;
-            app.duration_ms = selected->duration_ms;
-            app.play_sent = 0;
-            app.paused = 0;
-            app.stream_playing = 0;
-            app.pause_after_seek = 0;
-            jd_audio_set_paused(1);
-            jd_audio_reset();
-            jd_video_reset_queue();
-            queue_play();
-            app.mode = JD_APP_BUFFERING;
+            if (app.catalog_kind == JD_CATALOG_TV) {
+                app.tv_series_selected = app.home_selected;
+                snprintf(app.tv_series_id, sizeof(app.tv_series_id), "%s", selected->id);
+                snprintf(app.tv_series_title, sizeof(app.tv_series_title), "%s", selected->title);
+                snprintf(app.catalog_parent_id, sizeof(app.catalog_parent_id), "%s", selected->id);
+                snprintf(app.catalog_title, sizeof(app.catalog_title), "%s", selected->title);
+                app.catalog_kind = JD_CATALOG_TV_SEASONS;
+                app.home_selected = 0;
+                app.catalog_requested = 0;
+                queue_catalog_request(app.catalog_kind, app.catalog_parent_id);
+            } else if (app.catalog_kind == JD_CATALOG_TV_SEASONS) {
+                app.tv_season_selected = app.home_selected;
+                snprintf(app.tv_season_id, sizeof(app.tv_season_id), "%s", selected->id);
+                snprintf(app.tv_season_title, sizeof(app.tv_season_title), "%s", selected->title);
+                snprintf(app.catalog_parent_id, sizeof(app.catalog_parent_id), "%s", selected->id);
+                snprintf(app.catalog_title, sizeof(app.catalog_title), "%s", selected->title);
+                app.catalog_kind = JD_CATALOG_TV_EPISODES;
+                app.home_selected = 0;
+                app.catalog_requested = 0;
+                queue_catalog_request(app.catalog_kind, app.catalog_parent_id);
+            } else {
+                snprintf(app.item_id, sizeof(app.item_id), "%s", selected->id);
+                app.position_ms = selected->position_ms;
+                app.duration_ms = selected->duration_ms;
+                app.play_sent = 0;
+                app.paused = 0;
+                app.stream_playing = 0;
+                app.pause_after_seek = 0;
+                jd_audio_set_paused(1);
+                jd_audio_reset();
+                jd_video_reset_queue();
+                queue_play();
+                app.mode = JD_APP_BUFFERING;
+            }
         }
-    } else if (app.mode != JD_APP_CATALOG_LOADING && app.mode != JD_APP_TUNING) {
+    } else if (app.mode == JD_APP_CATALOG_LOADING) {
+        /* Consume button transitions while a catalog request is in flight so
+           one A/B press cannot activate two hierarchy levels. */
+        (void)jd_controls_update_browser(&app.controls, app.pd);
+    } else if (app.mode != JD_APP_TUNING) {
         actions = jd_controls_update(&app.controls, app.pd, app.position_ms, app.duration_ms);
     }
     if (actions.toggle_pause && (app.mode == JD_APP_PLAYING || app.mode == JD_APP_PAUSED)) {
@@ -586,13 +681,13 @@ int jd_app_update(void* userdata) {
             break;
         case JD_APP_CATALOG_LOADING:
             jd_ui_draw_catalog(
-                catalog_heading(app.catalog_kind),
+                app.catalog_title,
                 app.home_items, app.home_count, app.home_selected, 1
             );
             break;
         case JD_APP_CATALOG:
             jd_ui_draw_catalog(
-                catalog_heading(app.catalog_kind),
+                app.catalog_title,
                 app.home_items, app.home_count, app.home_selected, 0
             );
             break;

@@ -40,14 +40,16 @@ All integers are unsigned and big-endian. Video pixels inside a byte are MSB-fir
 | `18` | `PONG` | either | exact PING payload and timestamp |
 | `19` | `STREAM_INFO` | Bridge → client | Binary stream descriptor and media title |
 | `1A` | `CLIENT_STATS` | client → Bridge | five u32 buffer/drop counters followed by app mode and audio playhead milliseconds |
-| `20` | `HOME_REQUEST` | client → Bridge | one-byte catalog selector (`0` Continue Watching, `1` Movies, `2` TV, `3` Recently Added) |
+| `20` | `HOME_REQUEST` | client → Bridge | catalog selector plus optional parent id (`0` Continue Watching, `1` Movies, `2` TV series, `3` Recently Added, `4` seasons, `5` episodes) |
 | `21` | `HOME_RESPONSE` | Bridge → client | up to eight entries from the requested catalog with resume metadata |
 
 Flag bit 0 (`DISCONTINUITY`) means buffered media from the prior timeline must be discarded. It is set on `STREAM_INFO` after play/seek and on the first following keyframe.
 
 ### HOME_RESPONSE payload
 
-The payload begins with `u8 item_count`. Each item then contains three length-prefixed UTF-8 fields—`u8 id_length + id`, `u8 title_length + title`, and `u8 subtitle_length + subtitle`—followed by big-endian `u64 position_ms` and `u64 duration_ms`. The bridge returns at most eight entries. Continue Watching preserves Jellyfin resume positions; Movies is alphabetized; TV returns the newest playable episodes; and Recently Added mixes new movies and episodes. All entries include any saved position available from Jellyfin user data.
+`HOME_REQUEST` begins with `u8 catalog_kind`, followed by `u8 parent_id_length + parent_id`. Root catalogs use a zero-length parent id; seasons require a series id and episodes require a season id. A legacy one-byte root request remains accepted.
+
+`HOME_RESPONSE` begins with `u8 item_count`. Each item then contains three length-prefixed UTF-8 fields—`u8 id_length + id`, `u8 title_length + title`, and `u8 subtitle_length + subtitle`—followed by big-endian `u64 position_ms` and `u64 duration_ms`. The bridge returns at most eight entries. Continue Watching preserves Jellyfin resume positions; Movies and TV series are alphabetized; TV drill-down returns seasons and then playable episodes; and Recently Added mixes new movies and episodes. All playable entries include any saved position available from Jellyfin user data.
 
 ### VIDEO_DELTA payload
 
