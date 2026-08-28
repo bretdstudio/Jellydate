@@ -4,6 +4,12 @@
 #include <stdint.h>
 
 #define JD_HOME_MAX_ITEMS 8
+#define JD_TEXT_ENTRY_CHARACTERS "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_:~/+=@"
+#define JD_TEXT_ENTRY_CHARACTER_COUNT ((int)(sizeof(JD_TEXT_ENTRY_CHARACTERS) - 1))
+#define JD_TEXT_ENTRY_CLEAR_INDEX JD_TEXT_ENTRY_CHARACTER_COUNT
+#define JD_TEXT_ENTRY_CANCEL_INDEX (JD_TEXT_ENTRY_CHARACTER_COUNT + 1)
+#define JD_TEXT_ENTRY_DONE_INDEX (JD_TEXT_ENTRY_CHARACTER_COUNT + 2)
+#define JD_TEXT_ENTRY_ITEM_COUNT (JD_TEXT_ENTRY_CHARACTER_COUNT + 3)
 
 typedef struct {
     char id[64];
@@ -25,6 +31,12 @@ void jd_ui_init(PlaydateAPI* playdate);
 void jd_ui_shutdown(void);
 void jd_ui_draw_tuning(const char* detail);
 void jd_ui_draw_menu(int selected);
+void jd_ui_draw_setup(
+    const char* host, size_t token_length, int selected,
+    const char* status, int can_cancel
+);
+void jd_ui_draw_text_entry(const char* label, const char* text, int selected);
+void jd_ui_draw_setup_testing(const char* host);
 void jd_ui_draw_alpha_index(const char* heading, int selected);
 void jd_ui_draw_catalog(
     const char* heading,

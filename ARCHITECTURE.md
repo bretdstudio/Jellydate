@@ -62,6 +62,7 @@ playdate/src/protocol.*   allocation-free streaming parser
 playdate/src/video.*      padded-framebuffer boundary
 playdate/src/audio.*      fixed PCM ring and real-time callback boundary
 playdate/src/controls.*   A/B/crank behavior
+playdate/src/settings.*   private bridge host/token persistence
 playdate/src/ui.*         intentionally tiny pocket-TV presentation
 ```
 
@@ -79,8 +80,7 @@ playdate/src/ui.*         intentionally tiny pocket-TV presentation
 
 1. Extend the physical-hardware endurance gate from the initial real-time stream to a full movie.
 2. Add Jellyfin lifecycle retry handling and reconnect/keyframe recovery.
-3. Add persistent keyboard-based bridge setup.
-4. Characterize the fixed 5 FPS compressed-delta profile across broader movie content and Wi-Fi conditions; retain the adaptive wire budget as a fallback for unusually weak links.
+3. Characterize the fixed 5 FPS compressed-delta profile across broader movie content and Wi-Fi conditions; retain the adaptive wire budget as a fallback for unusually weak links.
 
 ## Reliability telemetry
 

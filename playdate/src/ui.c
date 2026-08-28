@@ -170,6 +170,99 @@ void jd_ui_draw_menu(int selected) {
     pd->graphics->drawText("D-PAD / CRANK", 13, kUTF8Encoding, 258, 222);
 }
 
+void jd_ui_draw_setup(
+    const char* host,
+    size_t token_length,
+    int selected,
+    const char* status,
+    int can_cancel
+) {
+    char token_status[40];
+    pd->graphics->clear(kColorWhite);
+    pd->graphics->drawText("JELLYDATE", 9, kUTF8Encoding, 12, 7);
+    pd->graphics->drawLine(12, 28, 388, 28, 2, kColorBlack);
+    pd->graphics->drawText("BRIDGE SETUP", 12, kUTF8Encoding, 12, 35);
+
+    if (selected == 0) pd->graphics->drawRect(8, 58, 384, 48, kColorBlack);
+    pd->graphics->drawText("HOST", 4, kUTF8Encoding, 16, 61);
+    scaled_text(host[0] == '\0' ? "Not set" : host, 16, 82, 368, META_TEXT_SCALE);
+
+    if (selected == 1) pd->graphics->drawRect(8, 109, 384, 48, kColorBlack);
+    pd->graphics->drawText("TOKEN", 5, kUTF8Encoding, 16, 112);
+    if (token_length == 0) snprintf(token_status, sizeof(token_status), "Not set");
+    else snprintf(token_status, sizeof(token_status), "%u characters saved", (unsigned int)token_length);
+    scaled_text(token_status, 16, 133, 368, META_TEXT_SCALE);
+
+    if (selected == 2) pd->graphics->drawRect(8, 160, 238, 37, kColorBlack);
+    if (selected == 3) pd->graphics->drawRect(254, 160, 138, 37, kColorBlack);
+    pd->graphics->drawText("TEST & SAVE", 11, kUTF8Encoding, 20, 168);
+    pd->graphics->drawText(
+        can_cancel ? "CANCEL" : "REQUIRED", can_cancel ? 6 : 8,
+        kUTF8Encoding, can_cancel ? 274 : 262, 168
+    );
+    if (status != NULL && status[0] != '\0') {
+        scaled_text(status, 12, 199, 376, 0.62f);
+    }
+    pd->graphics->drawText("A: SELECT", 9, kUTF8Encoding, 12, 222);
+    pd->graphics->drawText("CRANK: MOVE", 11, kUTF8Encoding, 282, 222);
+}
+
+void jd_ui_draw_text_entry(const char* label, const char* text, int selected) {
+    const char* characters = JD_TEXT_ENTRY_CHARACTERS;
+    const char* visible = text;
+    size_t text_length = strlen(text);
+    int index;
+    if (text_length > 42) visible = text + text_length - 42;
+    pd->graphics->clear(kColorWhite);
+    pd->graphics->drawText(label, strlen(label), kUTF8Encoding, 8, 5);
+    pd->graphics->drawText("A: TYPE  B: DELETE", 18, kUTF8Encoding, 207, 5);
+    pd->graphics->drawTextInRect(
+        visible, strlen(visible), kUTF8Encoding,
+        8, 30, 384, 24, kWrapClip, kAlignTextLeft
+    );
+    pd->graphics->drawLine(8, 55, 392, 55, 1, kColorBlack);
+
+    for (index = 0; index < JD_TEXT_ENTRY_ITEM_COUNT; index += 1) {
+        char character[2];
+        const char* item;
+        int item_length;
+        int column = index % 13;
+        int row = index / 13;
+        int x = 8 + column * 30;
+        int y = 68 + row * 25;
+        int width;
+        if (index < JD_TEXT_ENTRY_CHARACTER_COUNT) {
+            character[0] = characters[index];
+            character[1] = '\0';
+            item = character;
+            item_length = 1;
+        } else if (index == JD_TEXT_ENTRY_CLEAR_INDEX) {
+            item = "CLR";
+            item_length = 3;
+        } else if (index == JD_TEXT_ENTRY_CANCEL_INDEX) {
+            item = "X";
+            item_length = 1;
+        } else {
+            item = "OK";
+            item_length = 2;
+        }
+        if (index == selected) pd->graphics->drawRect(x, y, 28, 23, kColorBlack);
+        width = pd->graphics->getTextWidth(NULL, item, item_length, kUTF8Encoding, 0);
+        pd->graphics->drawText(
+            item, item_length, kUTF8Encoding, x + (28 - width) / 2, y + 2
+        );
+    }
+}
+
+void jd_ui_draw_setup_testing(const char* host) {
+    pd->graphics->clear(kColorWhite);
+    pd->graphics->drawText("JELLYDATE", 9, kUTF8Encoding, 12, 7);
+    pd->graphics->drawLine(12, 28, 388, 28, 2, kColorBlack);
+    text_centered("TESTING BRIDGE", 62);
+    scaled_text(host, 20, 92, 360, META_TEXT_SCALE);
+    loading_data(132);
+}
+
 void jd_ui_draw_catalog(
     const char* heading,
     const JDHomeItem* items,

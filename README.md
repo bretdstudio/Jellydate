@@ -7,7 +7,7 @@ This repository contains two deliberately unequal halves:
 - `bridge/` authenticates with Jellyfin, runs FFmpeg, dithers each frame, and serves a tiny HTTP API plus a binary TCP stream.
 - `playdate/` receives almost-display-ready bytes, copies them into the framebuffer, and responds to A, B, and the crank.
 
-The current `0.1` spike proves the end-to-end media path in both the Simulator and on physical Playdate hardware. It has a Playdate-native 2×2 home dashboard with Continue Watching, Movies, TV Shows, and Recently Added; server-filtered A–Z indexes for movies and TV shows; seamless pagination across every catalog; complete series → seasons → episodes navigation with page-and-selection-preserving back behavior; compact media details with title, context, description, runtime, and resume position; real Jellyfin browsing endpoints; authenticated media input; negotiated ordered-dithered video and mono PCM audio; audio-master A/V synchronization; pause/stop; crank seeking; and playback lifecycle reporting. Persistent keyboard-based bridge setup is the next interface milestone.
+The current `0.1` spike proves the end-to-end media path in both the Simulator and on physical Playdate hardware. It has a Playdate-native 2×2 home dashboard with Continue Watching, Movies, TV Shows, and Recently Added; server-filtered A–Z indexes for movies and TV shows; seamless pagination across every catalog; complete series → seasons → episodes navigation with page-and-selection-preserving back behavior; compact media details with title, context, description, runtime, and resume position; persistent on-device bridge setup; real Jellyfin browsing endpoints; authenticated media input; negotiated ordered-dithered video and mono PCM audio; audio-master A/V synchronization; pause/stop; crank seeking; and playback lifecycle reporting.
 
 ## First transmission received
 
@@ -44,7 +44,7 @@ cd bridge
 npm run generate-playdate-config -- YOUR_BRIDGE_LAN_IP
 ```
 
-This reads the bridge token from `.env` without copying it into tracked source. Set the desired item id in the generated `playdate/src/config_private.h`, or keep `__test__` for `TEST_MEDIA_PATH`.
+This reads the bridge token from `.env` without copying it into tracked source. The generated values are now development and first-run fallbacks; once Test & Save succeeds, the Playdate stores its bridge host and token in the app's private data directory and uses them on future launches.
 
 Then:
 
@@ -54,7 +54,9 @@ make
 make simulator
 ```
 
-On first connection, Playdate asks permission to reach the bridge. In the browser, A opens the selected item or drills into a series and B goes back. On a media-details screen, A starts or resumes playback and B returns to the catalog. During playback, A pauses/resumes, B returns to the media details, and the crank scrubs. Slow crank motion moves by seconds; faster motion winds the imaginary reel increasingly quickly. The seek is sent half a second after crank movement stops.
+On first connection, Playdate asks permission to reach the bridge. If no usable fallback or saved configuration exists, Jellydate opens Bridge Setup. Select Host or Token to use its hardware-compatible character picker, then choose Test & Save; settings are written only after the bridge authenticates successfully. Bridge Setup remains available from the Playdate system menu.
+
+In the browser, A opens the selected item or drills into a series and B goes back. On a media-details screen, A starts or resumes playback and B returns to the catalog. During playback, A pauses/resumes, B returns to the media details, and the crank scrubs. Slow crank motion moves by seconds; faster motion winds the imaginary reel increasingly quickly. The seek is sent half a second after crank movement stops.
 
 ## Useful development commands
 

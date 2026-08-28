@@ -5,6 +5,7 @@
 #include "controls.h"
 #include "network.h"
 #include "protocol.h"
+#include "settings.h"
 #include "ui.h"
 #include "video.h"
 
@@ -33,6 +34,9 @@ typedef enum {
     JD_APP_ENDED,
     JD_APP_ERROR,
     JD_APP_MENU,
+    JD_APP_SETUP,
+    JD_APP_TEXT_ENTRY,
+    JD_APP_SETUP_TESTING,
     JD_APP_MOVIE_INDEX,
     JD_APP_TV_INDEX,
     JD_APP_CATALOG_LOADING,
@@ -53,6 +57,11 @@ typedef struct {
     int catalog_active;
     int movie_index_active;
     int tv_index_active;
+    int setup_requested;
+    int setup_testing;
+    int setup_selected;
+    int text_entry_field;
+    int text_entry_selected;
     int details_requested;
     int detail_active;
     int catalog_input_armed;
@@ -93,10 +102,14 @@ typedef struct {
     uint16_t catalog_page_start;
     JDHomeItem home_items[JD_HOME_MAX_ITEMS];
     JDItemDetails detail;
+    JDSettings settings;
+    JDSettings setup_draft;
     char item_id[64];
     char detail_id[64];
     char title[96];
     char status[96];
+    char setup_status[96];
+    char text_entry_original[JD_SETTINGS_TOKEN_CAPACITY];
     char catalog_parent_id[64];
     char catalog_title[96];
     char tv_series_id[64];
@@ -109,6 +122,22 @@ typedef struct {
 static JDApp app;
 static uint8_t decoded_video_frame[JD_FRAME_SIZE];
 static int decoded_video_ready;
+
+static void on_packet(
+    void* context,
+    const JDProtocolHeader* header,
+    const uint8_t* payload
+);
+static void on_network_bytes(void* context, const uint8_t* bytes, size_t length);
+
+static int settings_usable(const JDSettings* settings) {
+    return jd_settings_valid(settings) &&
+           strcmp(settings->token, "replace-with-a-long-random-token") != 0;
+}
+
+static const JDSettings* connection_settings(void) {
+    return app.setup_testing ? &app.setup_draft : &app.settings;
+}
 
 static void write_u32(uint8_t* output, uint32_t value) {
     output[0] = (uint8_t)(value >> 24);
@@ -160,6 +189,102 @@ static void reset_browser_input(void) {
     app.catalog_input_armed = 0;
     app.catalog_neutral_frames = 0;
     app.catalog_input_unlock_ms = app.pd->system->getCurrentTimeMilliseconds() + 250;
+}
+
+static void reset_network(void) {
+    jd_network_close(&app.network);
+    jd_protocol_parser_init(&app.parser, on_packet, &app);
+    jd_network_init(&app.network, app.pd, on_network_bytes, &app);
+    app.handshake_sent = 0;
+    app.play_sent = 0;
+    app.catalog_requested = 0;
+    app.details_requested = 0;
+    app.reconnect_pending = 0;
+}
+
+static void connect_to_settings(const JDSettings* settings) {
+    reset_network();
+    app.mode = app.setup_testing ? JD_APP_SETUP_TESTING : JD_APP_TUNING;
+    jd_network_connect(&app.network, settings->host, settings->port);
+}
+
+static void enter_setup(void) {
+    if (app.network.state == JD_NET_CONNECTED && app.item_id[0] != '\0') {
+        queue_packet(JD_PACKET_STOP, NULL, 0);
+        jd_network_flush(&app.network);
+    }
+    jd_audio_set_paused(1);
+    jd_audio_reset();
+    jd_video_reset_queue();
+    reset_network();
+    app.setup_draft = app.settings;
+    app.setup_testing = 0;
+    app.setup_requested = 0;
+    app.setup_selected = 0;
+    app.setup_status[0] = '\0';
+    app.item_id[0] = '\0';
+    app.stream_playing = 0;
+    app.paused = 0;
+    app.catalog_active = 0;
+    app.catalog_requested = 0;
+    app.movie_index_active = 0;
+    app.tv_index_active = 0;
+    app.detail_active = 0;
+    reset_browser_input();
+    app.mode = JD_APP_SETUP;
+}
+
+static void request_setup(void* userdata) {
+    (void)userdata;
+    app.setup_requested = 1;
+}
+
+static char* setup_edit_buffer(void) {
+    return app.text_entry_field == 0
+        ? app.setup_draft.host : app.setup_draft.token;
+}
+
+static size_t setup_edit_capacity(void) {
+    return app.text_entry_field == 0
+        ? sizeof(app.setup_draft.host) : sizeof(app.setup_draft.token);
+}
+
+static void begin_text_entry(int field) {
+    const char* value;
+    app.text_entry_field = field;
+    app.text_entry_selected = 0;
+    value = field == 0 ? app.setup_draft.host : app.setup_draft.token;
+    snprintf(app.text_entry_original, sizeof(app.text_entry_original), "%s", value);
+    reset_browser_input();
+    app.mode = JD_APP_TEXT_ENTRY;
+}
+
+static void cancel_setup(void) {
+    if (!settings_usable(&app.settings)) {
+        snprintf(
+            app.setup_status, sizeof(app.setup_status),
+            "Enter a host and token to continue"
+        );
+        return;
+    }
+    app.setup_draft = app.settings;
+    app.setup_status[0] = '\0';
+    app.setup_testing = 0;
+    connect_to_settings(&app.settings);
+}
+
+static void test_setup(void) {
+    if (!jd_settings_valid(&app.setup_draft) ||
+        strcmp(app.setup_draft.token, "replace-with-a-long-random-token") == 0) {
+        snprintf(
+            app.setup_status, sizeof(app.setup_status),
+            "Host required; token must be 16+ characters"
+        );
+        return;
+    }
+    app.setup_status[0] = '\0';
+    app.setup_testing = 1;
+    connect_to_settings(&app.setup_draft);
 }
 
 static void show_movie_index(void) {
@@ -453,7 +578,23 @@ static void on_packet(
                 ? header->payload_length : sizeof(state->status) - 1;
             memcpy(state->status, payload, copy);
             state->status[copy] = '\0';
-            if (strcmp(state->status, "ready") == 0) {
+            if (strcmp(state->status, "ready") == 0 && state->setup_testing) {
+                if (jd_settings_save(state->pd, &state->setup_draft)) {
+                    state->settings = state->setup_draft;
+                    state->setup_testing = 0;
+                    state->setup_status[0] = '\0';
+                    state->mode = JD_APP_MENU;
+                } else {
+                    snprintf(
+                        state->setup_status, sizeof(state->setup_status),
+                        "Connected, but settings could not be saved"
+                    );
+                    state->setup_testing = 0;
+                    state->handshake_sent = 0;
+                    jd_network_close(&state->network);
+                    state->mode = JD_APP_SETUP;
+                }
+            } else if (strcmp(state->status, "ready") == 0) {
                 if (state->item_id[0] != '\0') {
                     if (!state->play_sent) queue_play();
                 } else if (state->detail_active) {
@@ -521,7 +662,18 @@ static void on_packet(
             memcpy(state->status, payload, copy);
             state->status[copy] = '\0';
             jd_audio_set_paused(1);
-            state->mode = JD_APP_ERROR;
+            if (state->setup_testing) {
+                snprintf(
+                    state->setup_status, sizeof(state->setup_status),
+                    "Bridge rejected setup: %.62s", state->status
+                );
+                state->setup_testing = 0;
+                state->handshake_sent = 0;
+                jd_network_close(&state->network);
+                state->mode = JD_APP_SETUP;
+            } else {
+                state->mode = JD_APP_ERROR;
+            }
             break;
         default:
             break;
@@ -537,10 +689,11 @@ static void on_network_bytes(void* context, const uint8_t* bytes, size_t length)
 }
 
 static void send_handshake(void) {
-    const uint8_t* token = (const uint8_t*)JELLYDATE_TOKEN;
-    queue_packet(JD_PACKET_AUTH, token, (uint32_t)strlen(JELLYDATE_TOKEN));
+    const JDSettings* active = connection_settings();
+    const uint8_t* token = (const uint8_t*)active->token;
+    queue_packet(JD_PACKET_AUTH, token, (uint32_t)strlen(active->token));
     app.handshake_sent = 1;
-    app.mode = JD_APP_BUFFERING;
+    app.mode = app.setup_testing ? JD_APP_SETUP_TESTING : JD_APP_BUFFERING;
 }
 
 void jd_app_init(PlaydateAPI* playdate) {
@@ -554,8 +707,10 @@ void jd_app_init(PlaydateAPI* playdate) {
     app.movie_saved_letter = 1;
     app.tv_letter_selected = 1;
     app.tv_saved_letter = 1;
+    jd_settings_defaults(&app.settings);
+    (void)jd_settings_load(playdate, &app.settings);
     snprintf(app.title, sizeof(app.title), "UNTITLED TRANSMISSION");
-    snprintf(app.status, sizeof(app.status), "channel %d", JELLYDATE_STREAM_PORT);
+    snprintf(app.status, sizeof(app.status), "channel %d", app.settings.port);
     /* Run the scheduler faster than the media cadence so a small update-loop
        phase shift does not force two 30 FPS frames into one presentation. */
     playdate->display->setRefreshRate(50.0f);
@@ -566,7 +721,14 @@ void jd_app_init(PlaydateAPI* playdate) {
     jd_controls_init(&app.controls);
     jd_protocol_parser_init(&app.parser, on_packet, &app);
     jd_network_init(&app.network, playdate, on_network_bytes, &app);
-    jd_network_connect(&app.network, JELLYDATE_BRIDGE_HOST, JELLYDATE_STREAM_PORT);
+    playdate->system->addMenuItem("Bridge Setup", request_setup, NULL);
+    if (settings_usable(&app.settings)) {
+        jd_network_connect(&app.network, app.settings.host, app.settings.port);
+    } else {
+        app.setup_draft = app.settings;
+        app.mode = JD_APP_SETUP;
+        reset_browser_input();
+    }
 }
 
 int jd_app_update(void* userdata) {
@@ -576,10 +738,20 @@ int jd_app_update(void* userdata) {
     uint32_t now;
     (void)userdata;
     now = app.pd->system->getCurrentTimeMilliseconds();
+    if (app.setup_requested) enter_setup();
     jd_network_poll(&app.network);
     if (app.network.state == JD_NET_CONNECTED && !app.handshake_sent) send_handshake();
     if (app.network.state == JD_NET_FAILED) {
-        if (!app.reconnect_pending) {
+        if (app.setup_testing) {
+            snprintf(
+                app.setup_status, sizeof(app.setup_status),
+                "Connection failed: %.68s", app.network.error
+            );
+            app.setup_testing = 0;
+            app.handshake_sent = 0;
+            jd_network_close(&app.network);
+            app.mode = JD_APP_SETUP;
+        } else if (!app.reconnect_pending && settings_usable(&app.settings)) {
             int reconnecting_browser = app.item_id[0] == '\0';
             snprintf(app.status, sizeof(app.status), "%.76s; reconnecting", app.network.error);
             app.pause_after_seek = app.paused;
@@ -601,7 +773,7 @@ int jd_app_update(void* userdata) {
     if (app.reconnect_pending &&
         (int32_t)(now - app.reconnect_at_ms) >= 0) {
         app.reconnect_pending = 0;
-        jd_network_connect(&app.network, JELLYDATE_BRIDGE_HOST, JELLYDATE_STREAM_PORT);
+        jd_network_connect(&app.network, app.settings.host, app.settings.port);
     }
     maybe_start_synced_playback(&app);
     if (app.mode == JD_APP_PLAYING) {
@@ -614,7 +786,86 @@ int jd_app_update(void* userdata) {
 
     memset(&actions, 0, sizeof(actions));
     memset(&browse_actions, 0, sizeof(browse_actions));
-    if (app.mode == JD_APP_MENU) {
+    if (app.mode == JD_APP_SETUP) {
+        browse_actions = jd_controls_update_browser(&app.controls, app.pd);
+        if (!app.catalog_input_armed) {
+            if (!browse_actions.select_held && !browse_actions.back_held &&
+                !browse_actions.select && !browse_actions.back &&
+                browse_actions.movement == 0) {
+                app.catalog_neutral_frames += 1;
+                if (app.catalog_neutral_frames >= 2) app.catalog_input_armed = 1;
+            } else {
+                app.catalog_neutral_frames = 0;
+            }
+            memset(&browse_actions, 0, sizeof(browse_actions));
+        } else if ((int32_t)(now - app.catalog_input_unlock_ms) < 0) {
+            memset(&browse_actions, 0, sizeof(browse_actions));
+        }
+        if (browse_actions.back) {
+            cancel_setup();
+        } else if (browse_actions.movement != 0) {
+            app.setup_selected += browse_actions.movement > 0 ? 1 : -1;
+            while (app.setup_selected < 0) app.setup_selected += 4;
+            while (app.setup_selected >= 4) app.setup_selected -= 4;
+        }
+        if (app.mode == JD_APP_SETUP && browse_actions.select) {
+            if (app.setup_selected < 2) begin_text_entry(app.setup_selected);
+            else if (app.setup_selected == 2) test_setup();
+            else cancel_setup();
+        }
+    } else if (app.mode == JD_APP_TEXT_ENTRY) {
+        const char* characters = JD_TEXT_ENTRY_CHARACTERS;
+        char* edit = setup_edit_buffer();
+        size_t capacity = setup_edit_capacity();
+        size_t edit_length = strlen(edit);
+        browse_actions = jd_controls_update_browser(&app.controls, app.pd);
+        if (!app.catalog_input_armed) {
+            if (!browse_actions.select_held && !browse_actions.back_held &&
+                !browse_actions.select && !browse_actions.back &&
+                browse_actions.movement == 0) {
+                app.catalog_neutral_frames += 1;
+                if (app.catalog_neutral_frames >= 2) app.catalog_input_armed = 1;
+            } else {
+                app.catalog_neutral_frames = 0;
+            }
+            memset(&browse_actions, 0, sizeof(browse_actions));
+        } else if ((int32_t)(now - app.catalog_input_unlock_ms) < 0) {
+            memset(&browse_actions, 0, sizeof(browse_actions));
+        }
+        if (browse_actions.horizontal != 0) {
+            app.text_entry_selected += browse_actions.horizontal;
+        } else if (browse_actions.vertical != 0) {
+            app.text_entry_selected += browse_actions.vertical * 13;
+        } else if (browse_actions.movement != 0) {
+            app.text_entry_selected += browse_actions.movement;
+        }
+        while (app.text_entry_selected < 0) {
+            app.text_entry_selected += JD_TEXT_ENTRY_ITEM_COUNT;
+        }
+        while (app.text_entry_selected >= JD_TEXT_ENTRY_ITEM_COUNT) {
+            app.text_entry_selected -= JD_TEXT_ENTRY_ITEM_COUNT;
+        }
+        if (browse_actions.back && edit_length > 0) {
+            edit[edit_length - 1] = '\0';
+        }
+        if (browse_actions.select) {
+            if (app.text_entry_selected < JD_TEXT_ENTRY_CHARACTER_COUNT) {
+                if (edit_length + 1 < capacity) {
+                    edit[edit_length] = characters[app.text_entry_selected];
+                    edit[edit_length + 1] = '\0';
+                }
+            } else if (app.text_entry_selected == JD_TEXT_ENTRY_CLEAR_INDEX) {
+                edit[0] = '\0';
+            } else if (app.text_entry_selected == JD_TEXT_ENTRY_CANCEL_INDEX) {
+                snprintf(edit, capacity, "%s", app.text_entry_original);
+                reset_browser_input();
+                app.mode = JD_APP_SETUP;
+            } else {
+                reset_browser_input();
+                app.mode = JD_APP_SETUP;
+            }
+        }
+    } else if (app.mode == JD_APP_MENU) {
         browse_actions = jd_controls_update_browser(&app.controls, app.pd);
         if (browse_actions.horizontal != 0) {
             int row = app.menu_selected / 2;
@@ -908,7 +1159,8 @@ int jd_app_update(void* userdata) {
             );
         }
     } else if (app.mode == JD_APP_CATALOG_LOADING ||
-               app.mode == JD_APP_DETAILS_LOADING) {
+               app.mode == JD_APP_DETAILS_LOADING ||
+               app.mode == JD_APP_SETUP_TESTING) {
         /* Consume button transitions while a catalog request is in flight so
            one A/B press cannot activate two hierarchy levels. */
         (void)jd_controls_update_browser(&app.controls, app.pd);
@@ -1012,6 +1264,25 @@ int jd_app_update(void* userdata) {
         case JD_APP_MENU:
             jd_ui_draw_menu(app.menu_selected);
             break;
+        case JD_APP_SETUP:
+            jd_ui_draw_setup(
+                app.setup_draft.host,
+                strlen(app.setup_draft.token),
+                app.setup_selected,
+                app.setup_status,
+                settings_usable(&app.settings)
+            );
+            break;
+        case JD_APP_TEXT_ENTRY:
+            jd_ui_draw_text_entry(
+                app.text_entry_field == 0 ? "EDIT HOST" : "EDIT TOKEN",
+                setup_edit_buffer(),
+                app.text_entry_selected
+            );
+            break;
+        case JD_APP_SETUP_TESTING:
+            jd_ui_draw_setup_testing(app.setup_draft.host);
+            break;
         case JD_APP_MOVIE_INDEX:
             jd_ui_draw_alpha_index("MOVIES A-Z", app.movie_letter_selected);
             break;
@@ -1059,6 +1330,12 @@ void jd_app_system_pause(void) {
 }
 
 void jd_app_system_resume(void) {
+    if (app.setup_requested) {
+        app.system_resume_pending = 0;
+        /* The system-menu resume callback is still owned by the OS. Defer
+           socket teardown and setup initialization to the next update frame. */
+        return;
+    }
     if (!app.system_resume_pending) return;
 
     app.system_resume_pending = 0;

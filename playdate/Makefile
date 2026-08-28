@@ -11,7 +11,7 @@ $(error Playdate SDK not found. Set PLAYDATE_SDK_PATH or install the SDK)
 endif
 
 VPATH += src
-SRC = src/main.c src/app.c src/network.c src/protocol.c src/video.c src/audio.c src/controls.c src/ui.c
+SRC = src/main.c src/app.c src/network.c src/protocol.c src/video.c src/audio.c src/controls.c src/settings.c src/ui.c
 UINCDIR = src
 
 include $(SDK)/C_API/buildsupport/common.mk
