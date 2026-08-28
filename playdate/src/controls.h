@@ -20,6 +20,8 @@ typedef struct {
 
 typedef struct {
     int movement;
+    int horizontal;
+    int vertical;
     int select;
     int back;
 } JDBrowseActions;

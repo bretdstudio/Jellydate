@@ -72,6 +72,10 @@ describe('Jellydate packet protocol', () => {
       .toBe(CatalogKind.ContinueWatching);
     expect(decodeCatalogRequest(Buffer.from([CatalogKind.Movies])))
       .toBe(CatalogKind.Movies);
+    expect(decodeCatalogRequest(Buffer.from([CatalogKind.Tv])))
+      .toBe(CatalogKind.Tv);
+    expect(decodeCatalogRequest(Buffer.from([CatalogKind.RecentlyAdded])))
+      .toBe(CatalogKind.RecentlyAdded);
     expect(() => decodeCatalogRequest(Buffer.alloc(0))).toThrow(/1 byte/);
     expect(() => decodeCatalogRequest(Buffer.from([99]))).toThrow(/Unknown catalog/);
   });

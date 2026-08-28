@@ -150,6 +150,23 @@ export class JellyfinClient {
     return compactItems(response.data.Items);
   }
 
+  async getTvEpisodes(limit = 8): Promise<JellydateItem[]> {
+    const boundedLimit = Number.isFinite(limit)
+      ? Math.min(Math.max(Math.floor(limit), 1), 100)
+      : 8;
+    const response = await getItemsApi(this.api).getItems({
+      userId: this.currentUser.id,
+      limit: boundedLimit,
+      recursive: true,
+      includeItemTypes: ['Episode'],
+      sortBy: ['DateCreated'],
+      sortOrder: ['Descending'],
+      enableImages: true,
+      enableUserData: true,
+    });
+    return compactItems(response.data.Items);
+  }
+
   async getLibrary(parentId: string, limit = 50): Promise<JellydateItem[]> {
     const boundedLimit = Number.isFinite(limit)
       ? Math.min(Math.max(Math.floor(limit), 1), 100)

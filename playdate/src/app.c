@@ -16,7 +16,9 @@
 #define JD_RECONNECT_DELAY_MS 2000
 #define JD_CATALOG_CONTINUE_WATCHING 0
 #define JD_CATALOG_MOVIES 1
-#define JD_MENU_ITEM_COUNT 2
+#define JD_CATALOG_TV 2
+#define JD_CATALOG_RECENTLY_ADDED 3
+#define JD_MENU_ITEM_COUNT 4
 
 typedef enum {
     JD_APP_TUNING,
@@ -109,7 +111,10 @@ static void queue_play(void) {
 }
 
 static const char* catalog_heading(uint8_t kind) {
-    return kind == JD_CATALOG_MOVIES ? "MOVIES" : "CONTINUE WATCHING";
+    if (kind == JD_CATALOG_MOVIES) return "MOVIES";
+    if (kind == JD_CATALOG_TV) return "TV SHOWS";
+    if (kind == JD_CATALOG_RECENTLY_ADDED) return "RECENTLY ADDED";
+    return "CONTINUE WATCHING";
 }
 
 static void queue_catalog_request(uint8_t kind) {
@@ -441,14 +446,23 @@ int jd_app_update(void* userdata) {
     memset(&browse_actions, 0, sizeof(browse_actions));
     if (app.mode == JD_APP_MENU) {
         browse_actions = jd_controls_update_browser(&app.controls, app.pd);
-        if (browse_actions.movement != 0) {
+        if (browse_actions.horizontal != 0) {
+            int row = app.menu_selected / 2;
+            int column = app.menu_selected % 2;
+            column = (column + browse_actions.horizontal + 2) % 2;
+            app.menu_selected = row * 2 + column;
+        } else if (browse_actions.vertical != 0) {
+            int row = app.menu_selected / 2;
+            int column = app.menu_selected % 2;
+            row = (row + browse_actions.vertical + 2) % 2;
+            app.menu_selected = row * 2 + column;
+        } else if (browse_actions.movement != 0) {
             app.menu_selected += browse_actions.movement;
             while (app.menu_selected < 0) app.menu_selected += JD_MENU_ITEM_COUNT;
             while (app.menu_selected >= JD_MENU_ITEM_COUNT) app.menu_selected -= JD_MENU_ITEM_COUNT;
         }
         if (browse_actions.select) {
-            app.catalog_kind = app.menu_selected == 1
-                ? JD_CATALOG_MOVIES : JD_CATALOG_CONTINUE_WATCHING;
+            app.catalog_kind = (uint8_t)app.menu_selected;
             app.catalog_active = 1;
             app.catalog_requested = 0;
             app.home_selected = 0;

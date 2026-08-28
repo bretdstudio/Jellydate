@@ -63,8 +63,22 @@ JDBrowseActions jd_controls_update_browser(JDControls* controls, PlaydateAPI* pl
     playdate->system->getButtonState(&current, &pushed, &released);
     (void)current;
     (void)released;
-    if (pushed & (kButtonUp | kButtonLeft)) actions.movement -= 1;
-    if (pushed & (kButtonDown | kButtonRight)) actions.movement += 1;
+    if (pushed & kButtonUp) {
+        actions.movement -= 1;
+        actions.vertical -= 1;
+    }
+    if (pushed & kButtonDown) {
+        actions.movement += 1;
+        actions.vertical += 1;
+    }
+    if (pushed & kButtonLeft) {
+        actions.movement -= 1;
+        actions.horizontal -= 1;
+    }
+    if (pushed & kButtonRight) {
+        actions.movement += 1;
+        actions.horizontal += 1;
+    }
     if (pushed & kButtonA) actions.select = 1;
     if (pushed & kButtonB) actions.back = 1;
 

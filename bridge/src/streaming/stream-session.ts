@@ -147,9 +147,21 @@ export class StreamSession {
   }
 
   private async sendCatalog(kind: CatalogKind): Promise<void> {
-    const source = kind === CatalogKind.Movies
-      ? await this.jellyfin.getMovies(8)
-      : (await this.jellyfin.getHome()).continueWatching;
+    let source;
+    switch (kind) {
+      case CatalogKind.Movies:
+        source = await this.jellyfin.getMovies(8);
+        break;
+      case CatalogKind.Tv:
+        source = await this.jellyfin.getTvEpisodes(8);
+        break;
+      case CatalogKind.RecentlyAdded:
+        source = (await this.jellyfin.getHome()).recentlyAdded;
+        break;
+      default:
+        source = (await this.jellyfin.getHome()).continueWatching;
+        break;
+    }
     this.send(
       PacketType.HomeResponse,
       encodeHomeItems(source.slice(0, 8).map((item) => ({

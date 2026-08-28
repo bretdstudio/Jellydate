@@ -85,12 +85,14 @@ export interface HomeItem {
 export enum CatalogKind {
   ContinueWatching = 0,
   Movies = 1,
+  Tv = 2,
+  RecentlyAdded = 3,
 }
 
 export function decodeCatalogRequest(payload: Buffer): CatalogKind {
   if (payload.length !== 1) throw new Error('HOME_REQUEST payload must be 1 byte');
   const kind = payload.readUInt8(0);
-  if (kind !== CatalogKind.ContinueWatching && kind !== CatalogKind.Movies) {
+  if (kind < CatalogKind.ContinueWatching || kind > CatalogKind.RecentlyAdded) {
     throw new Error(`Unknown catalog kind ${kind}`);
   }
   return kind;

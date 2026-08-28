@@ -86,25 +86,79 @@ void jd_ui_draw_tuning(const char* detail) {
     antenna(200, 181);
 }
 
+static void draw_continue_icon(int x, int y) {
+    pd->graphics->drawEllipse(x + 2, y + 1, 38, 38, 2, 0, 360, kColorBlack);
+    pd->graphics->fillTriangle(x + 17, y + 10, x + 17, y + 30, x + 31, y + 20, kColorBlack);
+    pd->graphics->drawLine(x + 5, y + 42, x + 39, y + 42, 2, kColorBlack);
+    pd->graphics->fillRect(x + 5, y + 40, 14, 5, kColorBlack);
+}
+
+static void draw_movie_icon(int x, int y) {
+    pd->graphics->fillRect(x + 1, y + 3, 42, 9, kColorBlack);
+    pd->graphics->drawLine(x + 7, y + 3, x + 14, y + 11, 2, kColorWhite);
+    pd->graphics->drawLine(x + 21, y + 3, x + 28, y + 11, 2, kColorWhite);
+    pd->graphics->drawLine(x + 35, y + 3, x + 42, y + 11, 2, kColorWhite);
+    pd->graphics->drawRect(x + 1, y + 14, 42, 28, kColorBlack);
+    pd->graphics->drawLine(x + 1, y + 21, x + 43, y + 21, 2, kColorBlack);
+    pd->graphics->fillTriangle(x + 18, y + 25, x + 18, y + 37, x + 28, y + 31, kColorBlack);
+}
+
+static void draw_tv_icon(int x, int y) {
+    pd->graphics->drawLine(x + 22, y + 9, x + 11, y, 2, kColorBlack);
+    pd->graphics->drawLine(x + 22, y + 9, x + 34, y, 2, kColorBlack);
+    pd->graphics->drawRect(x + 1, y + 9, 43, 31, kColorBlack);
+    pd->graphics->drawRect(x + 5, y + 13, 29, 22, kColorBlack);
+    pd->graphics->fillEllipse(x + 37, y + 15, 4, 4, 0, 360, kColorBlack);
+    pd->graphics->fillEllipse(x + 37, y + 26, 4, 4, 0, 360, kColorBlack);
+    pd->graphics->drawLine(x + 8, y + 43, x + 15, y + 39, 2, kColorBlack);
+    pd->graphics->drawLine(x + 37, y + 43, x + 30, y + 39, 2, kColorBlack);
+}
+
+static void draw_recent_icon(int x, int y) {
+    pd->graphics->drawEllipse(x + 2, y + 10, 31, 31, 2, 0, 360, kColorBlack);
+    pd->graphics->drawLine(x + 17, y + 25, x + 17, y + 16, 2, kColorBlack);
+    pd->graphics->drawLine(x + 17, y + 25, x + 25, y + 29, 2, kColorBlack);
+    pd->graphics->drawLine(x + 38, y, x + 38, y + 16, 2, kColorBlack);
+    pd->graphics->drawLine(x + 30, y + 8, x + 46, y + 8, 2, kColorBlack);
+    pd->graphics->drawLine(x + 33, y + 3, x + 43, y + 13, 1, kColorBlack);
+    pd->graphics->drawLine(x + 43, y + 3, x + 33, y + 13, 1, kColorBlack);
+}
+
+static void draw_home_icon(int index, int x, int y) {
+    if (index == 0) draw_continue_icon(x, y);
+    else if (index == 1) draw_movie_icon(x, y);
+    else if (index == 2) draw_tv_icon(x, y);
+    else draw_recent_icon(x, y);
+}
+
 void jd_ui_draw_menu(int selected) {
-    static const char* titles[] = { "CONTINUE WATCHING", "MOVIES" };
-    static const char* details[] = { "PICK UP WHERE YOU LEFT OFF", "BROWSE YOUR JELLYFIN LIBRARY" };
+    static const char* title_top[] = { "CONTINUE", "MOVIES", "TV SHOWS", "RECENTLY" };
+    static const char* title_bottom[] = { "WATCHING", "", "", "ADDED" };
     int index;
     pd->graphics->clear(kColorWhite);
     pd->graphics->drawText("JELLYDATE", 9, kUTF8Encoding, 12, 7);
     pd->graphics->drawLine(12, 28, 388, 28, 2, kColorBlack);
     pd->graphics->drawText("HOME", 4, kUTF8Encoding, 12, 35);
-    for (index = 0; index < 2; index += 1) {
-        int y = 69 + index * 65;
+    for (index = 0; index < 4; index += 1) {
+        int x = 7 + (index % 2) * 195;
+        int y = 57 + (index / 2) * 75;
         if (index == selected) {
-            pd->graphics->drawRect(7, y - 5, 386, 54, kColorBlack);
-            pd->graphics->drawText(">", 1, kUTF8Encoding, 12, y + 4);
+            pd->graphics->drawRect(x, y, 191, 69, kColorBlack);
+            pd->graphics->drawRect(x + 2, y + 2, 187, 65, kColorBlack);
+            pd->graphics->fillRect(x + 7, y + 7, 5, 5, kColorBlack);
+        } else {
+            pd->graphics->drawRect(x, y, 191, 69, kColorBlack);
         }
-        scaled_text(titles[index], 29, y, 350, TITLE_TEXT_SCALE);
-        scaled_text(details[index], 29, y + 25, 350, META_TEXT_SCALE);
+        draw_home_icon(index, x + 13, y + 13);
+        if (title_bottom[index][0] == '\0') {
+            scaled_text(title_top[index], x + 67, y + 23, 112, 0.98f);
+        } else {
+            scaled_text(title_top[index], x + 67, y + 12, 112, 0.90f);
+            scaled_text(title_bottom[index], x + 67, y + 35, 112, 0.90f);
+        }
     }
     pd->graphics->drawText("A: SELECT", 9, kUTF8Encoding, 12, 222);
-    pd->graphics->drawText("D-PAD / CRANK: TUNE", 19, kUTF8Encoding, 207, 222);
+    pd->graphics->drawText("D-PAD / CRANK", 13, kUTF8Encoding, 258, 222);
 }
 
 void jd_ui_draw_catalog(
