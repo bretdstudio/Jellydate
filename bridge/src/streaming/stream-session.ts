@@ -10,6 +10,8 @@ import {
   PacketType,
 } from '../protocol/constants.js';
 import {
+  CatalogKind,
+  decodeCatalogRequest,
   decodePlayCommand,
   decodeClientStats,
   encodeHomeItems,
@@ -95,7 +97,7 @@ export class StreamSession {
         await this.play(decodePlayCommand(packet.payload));
         break;
       case PacketType.HomeRequest:
-        await this.sendHome();
+        await this.sendCatalog(decodeCatalogRequest(packet.payload));
         break;
       case PacketType.Pause:
         if (this.active) this.pauseActive(this.active);
@@ -144,11 +146,10 @@ export class StreamSession {
     this.send(PacketType.PlaybackState, Buffer.from('ready'));
   }
 
-  private async sendHome(): Promise<void> {
-    const home = await this.jellyfin.getHome();
-    const source = home.continueWatching.length > 0
-      ? home.continueWatching
-      : home.recentlyAdded;
+  private async sendCatalog(kind: CatalogKind): Promise<void> {
+    const source = kind === CatalogKind.Movies
+      ? await this.jellyfin.getMovies(8)
+      : (await this.jellyfin.getHome()).continueWatching;
     this.send(
       PacketType.HomeResponse,
       encodeHomeItems(source.slice(0, 8).map((item) => ({

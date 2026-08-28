@@ -82,6 +82,20 @@ export interface HomeItem {
   readonly durationMs: bigint;
 }
 
+export enum CatalogKind {
+  ContinueWatching = 0,
+  Movies = 1,
+}
+
+export function decodeCatalogRequest(payload: Buffer): CatalogKind {
+  if (payload.length !== 1) throw new Error('HOME_REQUEST payload must be 1 byte');
+  const kind = payload.readUInt8(0);
+  if (kind !== CatalogKind.ContinueWatching && kind !== CatalogKind.Movies) {
+    throw new Error(`Unknown catalog kind ${kind}`);
+  }
+  return kind;
+}
+
 export function encodeHomeItems(items: readonly HomeItem[]): Buffer {
   const encoded = items.slice(0, 8).map((item) => {
     const id = truncateUtf8(item.id, 63);

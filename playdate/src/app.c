@@ -14,6 +14,9 @@
 #define JD_VIDEO_START_FRAMES 6
 #define JD_CLIENT_STATS_INTERVAL_MS 1000
 #define JD_RECONNECT_DELAY_MS 2000
+#define JD_CATALOG_CONTINUE_WATCHING 0
+#define JD_CATALOG_MOVIES 1
+#define JD_MENU_ITEM_COUNT 2
 
 typedef enum {
     JD_APP_TUNING,
@@ -24,8 +27,9 @@ typedef enum {
     JD_APP_SEEK_BUFFERING,
     JD_APP_ENDED,
     JD_APP_ERROR,
-    JD_APP_HOME_LOADING,
-    JD_APP_HOME
+    JD_APP_MENU,
+    JD_APP_CATALOG_LOADING,
+    JD_APP_CATALOG
 } JDAppMode;
 
 typedef struct {
@@ -36,7 +40,9 @@ typedef struct {
     JDAppMode mode;
     int handshake_sent;
     int play_sent;
-    int home_requested;
+    int catalog_requested;
+    int catalog_active;
+    uint8_t catalog_kind;
     int paused;
     int scrub_started_paused;
     int pause_after_seek;
@@ -56,6 +62,7 @@ typedef struct {
     uint16_t video_height;
     int home_count;
     int home_selected;
+    int menu_selected;
     JDHomeItem home_items[JD_HOME_MAX_ITEMS];
     char item_id[64];
     char title[96];
@@ -101,10 +108,14 @@ static void queue_play(void) {
     }
 }
 
-static void queue_home_request(void) {
-    queue_packet(JD_PACKET_HOME_REQUEST, NULL, 0);
-    app.home_requested = 1;
-    app.mode = JD_APP_HOME_LOADING;
+static const char* catalog_heading(uint8_t kind) {
+    return kind == JD_CATALOG_MOVIES ? "MOVIES" : "CONTINUE WATCHING";
+}
+
+static void queue_catalog_request(uint8_t kind) {
+    queue_packet(JD_PACKET_HOME_REQUEST, &kind, 1);
+    app.catalog_requested = 1;
+    app.mode = JD_APP_CATALOG_LOADING;
 }
 
 static int parse_home_items(JDApp* state, const uint8_t* payload, size_t length) {
@@ -293,8 +304,10 @@ static void on_packet(
             if (strcmp(state->status, "ready") == 0) {
                 if (state->item_id[0] != '\0') {
                     if (!state->play_sent) queue_play();
-                } else if (!state->home_requested) {
-                    queue_home_request();
+                } else if (state->catalog_active) {
+                    if (!state->catalog_requested) queue_catalog_request(state->catalog_kind);
+                } else {
+                    state->mode = JD_APP_MENU;
                 }
             } else if (strcmp(state->status, "paused") == 0) {
                 state->stream_playing = 0;
@@ -325,7 +338,7 @@ static void on_packet(
                 snprintf(state->status, sizeof(state->status), "bad home listing");
                 state->mode = JD_APP_ERROR;
             } else {
-                state->mode = JD_APP_HOME;
+                state->mode = JD_APP_CATALOG;
             }
             break;
         case JD_PACKET_END_OF_STREAM:
@@ -363,7 +376,7 @@ static void send_handshake(void) {
 void jd_app_init(PlaydateAPI* playdate) {
     memset(&app, 0, sizeof(app));
     app.pd = playdate;
-    app.mode = JD_APP_HOME_LOADING;
+    app.mode = JD_APP_TUNING;
     app.command_sequence = 10;
     app.video_width = 400;
     app.video_height = 240;
@@ -393,21 +406,21 @@ int jd_app_update(void* userdata) {
     if (app.network.state == JD_NET_CONNECTED && !app.handshake_sent) send_handshake();
     if (app.network.state == JD_NET_FAILED) {
         if (!app.reconnect_pending) {
-            int reconnecting_home = app.item_id[0] == '\0';
+            int reconnecting_browser = app.item_id[0] == '\0';
             snprintf(app.status, sizeof(app.status), "%.76s; reconnecting", app.network.error);
             app.pause_after_seek = app.paused;
             app.paused = 0;
             app.stream_playing = 0;
             app.handshake_sent = 0;
             app.play_sent = 0;
-            app.home_requested = 0;
+            app.catalog_requested = 0;
             jd_audio_set_paused(1);
             jd_audio_reset();
             jd_video_reset_queue();
             jd_network_close(&app.network);
             app.reconnect_at_ms = now + JD_RECONNECT_DELAY_MS;
             app.reconnect_pending = 1;
-            app.mode = reconnecting_home ? JD_APP_HOME_LOADING : JD_APP_BUFFERING;
+            app.mode = reconnecting_browser ? JD_APP_TUNING : JD_APP_BUFFERING;
         }
     }
     if (app.reconnect_pending &&
@@ -426,14 +439,34 @@ int jd_app_update(void* userdata) {
 
     memset(&actions, 0, sizeof(actions));
     memset(&browse_actions, 0, sizeof(browse_actions));
-    if (app.mode == JD_APP_HOME) {
+    if (app.mode == JD_APP_MENU) {
         browse_actions = jd_controls_update_browser(&app.controls, app.pd);
+        if (browse_actions.movement != 0) {
+            app.menu_selected += browse_actions.movement;
+            while (app.menu_selected < 0) app.menu_selected += JD_MENU_ITEM_COUNT;
+            while (app.menu_selected >= JD_MENU_ITEM_COUNT) app.menu_selected -= JD_MENU_ITEM_COUNT;
+        }
+        if (browse_actions.select) {
+            app.catalog_kind = app.menu_selected == 1
+                ? JD_CATALOG_MOVIES : JD_CATALOG_CONTINUE_WATCHING;
+            app.catalog_active = 1;
+            app.catalog_requested = 0;
+            app.home_selected = 0;
+            queue_catalog_request(app.catalog_kind);
+        }
+    } else if (app.mode == JD_APP_CATALOG) {
+        browse_actions = jd_controls_update_browser(&app.controls, app.pd);
+        if (browse_actions.back) {
+            app.catalog_active = 0;
+            app.catalog_requested = 0;
+            app.mode = JD_APP_MENU;
+        }
         if (app.home_count > 0 && browse_actions.movement != 0) {
             app.home_selected += browse_actions.movement;
             while (app.home_selected < 0) app.home_selected += app.home_count;
             while (app.home_selected >= app.home_count) app.home_selected -= app.home_count;
         }
-        if (app.home_count > 0 && browse_actions.select) {
+        if (!browse_actions.back && app.home_count > 0 && browse_actions.select) {
             JDHomeItem* selected = &app.home_items[app.home_selected];
             snprintf(app.item_id, sizeof(app.item_id), "%s", selected->id);
             app.position_ms = selected->position_ms;
@@ -448,7 +481,7 @@ int jd_app_update(void* userdata) {
             queue_play();
             app.mode = JD_APP_BUFFERING;
         }
-    } else if (app.mode != JD_APP_HOME_LOADING) {
+    } else if (app.mode != JD_APP_CATALOG_LOADING && app.mode != JD_APP_TUNING) {
         actions = jd_controls_update(&app.controls, app.pd, app.position_ms, app.duration_ms);
     }
     if (actions.toggle_pause && (app.mode == JD_APP_PLAYING || app.mode == JD_APP_PAUSED)) {
@@ -466,7 +499,7 @@ int jd_app_update(void* userdata) {
         app.item_id[0] = '\0';
         app.paused = 0;
         app.stream_playing = 0;
-        app.mode = JD_APP_HOME;
+        app.mode = app.catalog_active ? JD_APP_CATALOG : JD_APP_MENU;
     }
     if (actions.scrub_changed &&
         (app.mode == JD_APP_PLAYING || app.mode == JD_APP_PAUSED ||
@@ -534,11 +567,20 @@ int jd_app_update(void* userdata) {
         case JD_APP_ERROR:
             jd_ui_draw_error(app.status);
             break;
-        case JD_APP_HOME_LOADING:
-            jd_ui_draw_home(app.home_items, app.home_count, app.home_selected, 1);
+        case JD_APP_MENU:
+            jd_ui_draw_menu(app.menu_selected);
             break;
-        case JD_APP_HOME:
-            jd_ui_draw_home(app.home_items, app.home_count, app.home_selected, 0);
+        case JD_APP_CATALOG_LOADING:
+            jd_ui_draw_catalog(
+                catalog_heading(app.catalog_kind),
+                app.home_items, app.home_count, app.home_selected, 1
+            );
+            break;
+        case JD_APP_CATALOG:
+            jd_ui_draw_catalog(
+                catalog_heading(app.catalog_kind),
+                app.home_items, app.home_count, app.home_selected, 0
+            );
             break;
         case JD_APP_PLAYING:
             break;

@@ -27,6 +27,7 @@ export function buildApp(
   });
 
   app.get('/api/home', async () => jellyfin.getHome());
+  app.get('/api/movies', async () => ({ items: await jellyfin.getMovies(50) }));
   app.get('/api/telemetry', async () => telemetry.snapshot());
   app.get('/api/libraries', async () => ({ items: await jellyfin.getLibraries() }));
   app.get<{ Params: { id: string }; Querystring: { limit?: string } }>(

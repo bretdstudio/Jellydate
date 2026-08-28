@@ -7,7 +7,7 @@ This repository contains two deliberately unequal halves:
 - `bridge/` authenticates with Jellyfin, runs FFmpeg, dithers each frame, and serves a tiny HTTP API plus a binary TCP stream.
 - `playdate/` receives almost-display-ready bytes, copies them into the framebuffer, and responds to A, B, and the crank.
 
-The current `0.1` spike proves the end-to-end media path in both the Simulator and on physical Playdate hardware. It has real Jellyfin browsing endpoints, authenticated media input, negotiated ordered-dithered video and mono PCM audio, audio-master A/V synchronization, pause/stop, crank seeking, and playback lifecycle reporting. A Playdate-native library browser and persistent setup are the next milestones.
+The current `0.1` spike proves the end-to-end media path in both the Simulator and on physical Playdate hardware. It has a Playdate-native home menu, Continue Watching and Movies catalogs, real Jellyfin browsing endpoints, authenticated media input, negotiated ordered-dithered video and mono PCM audio, audio-master A/V synchronization, pause/stop, crank seeking, and playback lifecycle reporting. TV-series drill-down, pagination, and persistent setup are the next interface milestones.
 
 ## First transmission received
 

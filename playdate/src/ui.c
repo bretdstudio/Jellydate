@@ -86,21 +86,48 @@ void jd_ui_draw_tuning(const char* detail) {
     antenna(200, 181);
 }
 
-void jd_ui_draw_home(const JDHomeItem* items, int count, int selected, int loading) {
+void jd_ui_draw_menu(int selected) {
+    static const char* titles[] = { "CONTINUE WATCHING", "MOVIES" };
+    static const char* details[] = { "PICK UP WHERE YOU LEFT OFF", "BROWSE YOUR JELLYFIN LIBRARY" };
+    int index;
+    pd->graphics->clear(kColorWhite);
+    pd->graphics->drawText("JELLYDATE", 9, kUTF8Encoding, 12, 7);
+    pd->graphics->drawLine(12, 28, 388, 28, 2, kColorBlack);
+    pd->graphics->drawText("HOME", 4, kUTF8Encoding, 12, 35);
+    for (index = 0; index < 2; index += 1) {
+        int y = 69 + index * 65;
+        if (index == selected) {
+            pd->graphics->drawRect(7, y - 5, 386, 54, kColorBlack);
+            pd->graphics->drawText(">", 1, kUTF8Encoding, 12, y + 4);
+        }
+        scaled_text(titles[index], 29, y, 350, TITLE_TEXT_SCALE);
+        scaled_text(details[index], 29, y + 25, 350, META_TEXT_SCALE);
+    }
+    pd->graphics->drawText("A: SELECT", 9, kUTF8Encoding, 12, 222);
+    pd->graphics->drawText("D-PAD / CRANK: TUNE", 19, kUTF8Encoding, 207, 222);
+}
+
+void jd_ui_draw_catalog(
+    const char* heading,
+    const JDHomeItem* items,
+    int count,
+    int selected,
+    int loading
+) {
     int first;
     int visible;
     int index;
     pd->graphics->clear(kColorWhite);
     pd->graphics->drawText("JELLYDATE", 9, kUTF8Encoding, 12, 7);
     pd->graphics->drawLine(12, 28, 388, 28, 2, kColorBlack);
-    pd->graphics->drawText("CONTINUE WATCHING", 17, kUTF8Encoding, 12, 35);
+    pd->graphics->drawText(heading, strlen(heading), kUTF8Encoding, 12, 35);
     if (loading) {
         text_centered("consulting the jelly oracle...", 112);
         return;
     }
     if (count <= 0) {
-        text_centered("Nothing half-watched. Impressive.", 104);
-        text_centered("Recently added is coming next.", 132);
+        text_centered("Nothing tuned in here yet.", 104);
+        text_centered("B: RETURN HOME", 132);
         return;
     }
 
@@ -118,8 +145,8 @@ void jd_ui_draw_home(const JDHomeItem* items, int count, int selected, int loadi
         scaled_text(item->subtitle, 29, y + 23, 350, META_TEXT_SCALE);
         progress(292, y + 40, 87, 5, item->position_ms, item->duration_ms);
     }
-    pd->graphics->drawText("A: WATCH", 8, kUTF8Encoding, 12, 222);
-    pd->graphics->drawText("D-PAD / CRANK: TUNE", 19, kUTF8Encoding, 207, 222);
+    pd->graphics->drawText("A: WATCH  B: BACK", 17, kUTF8Encoding, 12, 222);
+    pd->graphics->drawText("CRANK: TUNE", 11, kUTF8Encoding, 275, 222);
 }
 
 void jd_ui_draw_error(const char* detail) {

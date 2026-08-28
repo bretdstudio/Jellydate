@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { AudioSampleFormat, PacketFlags, PacketType } from '../src/protocol/constants.js';
 import {
+  CatalogKind,
+  decodeCatalogRequest,
   decodePlayCommand,
   decodeClientStats,
   encodeHomeItems,
@@ -63,6 +65,15 @@ describe('Jellydate packet protocol', () => {
     cursor += subtitleLength;
     expect(payload.readBigUInt64BE(cursor)).toBe(1_234n);
     expect(payload.readBigUInt64BE(cursor + 8)).toBe(5_678n);
+  });
+
+  it('decodes catalog requests and rejects unknown catalogs', () => {
+    expect(decodeCatalogRequest(Buffer.from([CatalogKind.ContinueWatching])))
+      .toBe(CatalogKind.ContinueWatching);
+    expect(decodeCatalogRequest(Buffer.from([CatalogKind.Movies])))
+      .toBe(CatalogKind.Movies);
+    expect(() => decodeCatalogRequest(Buffer.alloc(0))).toThrow(/1 byte/);
+    expect(() => decodeCatalogRequest(Buffer.from([99]))).toThrow(/Unknown catalog/);
   });
 
   it('includes the media title in STREAM_INFO', () => {

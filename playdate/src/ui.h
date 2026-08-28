@@ -16,7 +16,14 @@ typedef struct {
 void jd_ui_init(PlaydateAPI* playdate);
 void jd_ui_shutdown(void);
 void jd_ui_draw_tuning(const char* detail);
-void jd_ui_draw_home(const JDHomeItem* items, int count, int selected, int loading);
+void jd_ui_draw_menu(int selected);
+void jd_ui_draw_catalog(
+    const char* heading,
+    const JDHomeItem* items,
+    int count,
+    int selected,
+    int loading
+);
 void jd_ui_draw_error(const char* detail);
 void jd_ui_draw_paused_overlay(
     const char* title, uint64_t position_ms, uint64_t duration_ms,
