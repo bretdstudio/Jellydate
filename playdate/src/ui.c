@@ -209,7 +209,9 @@ void jd_ui_draw_catalog(
         }
         scaled_text(item->title, 29, y, 350, TITLE_TEXT_SCALE);
         scaled_text(item->subtitle, 29, y + 23, 350, META_TEXT_SCALE);
-        progress(292, y + 40, 87, 5, item->position_ms, item->duration_ms);
+        if (item->duration_ms > 0) {
+            progress(292, y + 40, 87, 5, item->position_ms, item->duration_ms);
+        }
     }
     pd->graphics->drawText("A: SELECT B: BACK", 17, kUTF8Encoding, 12, 222);
     pd->graphics->drawText("CRANK: TUNE", 11, kUTF8Encoding, 275, 222);
