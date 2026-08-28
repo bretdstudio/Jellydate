@@ -35,7 +35,7 @@ function formatCatalogSubtitle(kind: CatalogKind, item: JellydateItem): string {
     return item.productionYear?.toString() ?? '';
   }
   if (kind === CatalogKind.TvSeasons) {
-    return item.childCount !== null ? `${item.childCount} EPISODES` : 'SEASON';
+    return '';
   }
   if (kind === CatalogKind.TvEpisodes) {
     const number = item.indexNumber !== null ? `EPISODE ${item.indexNumber}` : 'EPISODE';
