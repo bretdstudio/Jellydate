@@ -165,35 +165,34 @@ export class StreamSession {
 
   private async sendCatalog(request: CatalogRequest): Promise<void> {
     const { kind, parentId, startIndex } = request;
-    let source;
-    let hasMore = false;
+    let source: JellydateItem[];
     switch (kind) {
       case CatalogKind.Movies:
-        source = await this.jellyfin.getMovies(8);
+        source = await this.jellyfin.getMovies(9, startIndex);
         break;
       case CatalogKind.Tv:
-        source = await this.jellyfin.getTvSeries(8);
+        source = await this.jellyfin.getTvSeries(9, startIndex);
         break;
       case CatalogKind.TvSeasons:
         if (!parentId) throw new Error('TV seasons require a series id');
-        source = await this.jellyfin.getSeasons(parentId, 8);
+        source = await this.jellyfin.getSeasons(parentId, 9, startIndex);
         break;
       case CatalogKind.TvEpisodes:
         if (!parentId) throw new Error('TV episodes require a season id');
         source = await this.jellyfin.getEpisodes(parentId, 9, startIndex);
-        hasMore = source.length > 8;
-        source = source.slice(0, 8);
         break;
       case CatalogKind.RecentlyAdded:
-        source = (await this.jellyfin.getHome()).recentlyAdded;
+        source = await this.jellyfin.getRecentlyAdded(9, startIndex);
         break;
       default:
-        source = (await this.jellyfin.getHome()).continueWatching;
+        source = await this.jellyfin.getContinueWatching(9, startIndex);
         break;
     }
+    const hasMore = source.length > 8;
+    source = source.slice(0, 8);
     this.send(
       PacketType.HomeResponse,
-      encodeHomeItems(source.slice(0, 8).map((item) => ({
+      encodeHomeItems(source.map((item) => ({
         id: item.id,
         title: kind === CatalogKind.TvSeasons || kind === CatalogKind.TvEpisodes
           ? item.name

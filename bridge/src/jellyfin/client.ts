@@ -104,31 +104,45 @@ export class JellyfinClient {
   }
 
   async getHome(): Promise<{ continueWatching: JellydateItem[]; recentlyAdded: JellydateItem[] }> {
-    const itemsApi = getItemsApi(this.api);
-    const [resume, recent] = await Promise.all([
-      itemsApi.getResumeItems({
-        userId: this.currentUser.id,
-        limit: 12,
-        mediaTypes: ['Video'],
-        includeItemTypes: ['Movie', 'Episode'],
-        enableImages: true,
-        enableUserData: true,
-      }),
-      itemsApi.getItems({
-        userId: this.currentUser.id,
-        limit: 12,
-        recursive: true,
-        includeItemTypes: ['Movie', 'Episode'],
-        sortBy: ['DateCreated'],
-        sortOrder: ['Descending'],
-        enableImages: true,
-        enableUserData: true,
-      }),
+    const [continueWatching, recentlyAdded] = await Promise.all([
+      this.getContinueWatching(12),
+      this.getRecentlyAdded(12),
     ]);
-    return {
-      continueWatching: compactItems(resume.data.Items),
-      recentlyAdded: compactItems(recent.data.Items),
-    };
+    return { continueWatching, recentlyAdded };
+  }
+
+  async getContinueWatching(limit = 8, startIndex = 0): Promise<JellydateItem[]> {
+    const boundedLimit = Number.isFinite(limit)
+      ? Math.min(Math.max(Math.floor(limit), 1), 100)
+      : 8;
+    const response = await getItemsApi(this.api).getResumeItems({
+      userId: this.currentUser.id,
+      limit: boundedLimit,
+      startIndex: Math.max(0, Math.floor(startIndex)),
+      mediaTypes: ['Video'],
+      includeItemTypes: ['Movie', 'Episode'],
+      enableImages: true,
+      enableUserData: true,
+    });
+    return compactItems(response.data.Items);
+  }
+
+  async getRecentlyAdded(limit = 8, startIndex = 0): Promise<JellydateItem[]> {
+    const boundedLimit = Number.isFinite(limit)
+      ? Math.min(Math.max(Math.floor(limit), 1), 100)
+      : 8;
+    const response = await getItemsApi(this.api).getItems({
+      userId: this.currentUser.id,
+      limit: boundedLimit,
+      startIndex: Math.max(0, Math.floor(startIndex)),
+      recursive: true,
+      includeItemTypes: ['Movie', 'Episode'],
+      sortBy: ['DateCreated'],
+      sortOrder: ['Descending'],
+      enableImages: true,
+      enableUserData: true,
+    });
+    return compactItems(response.data.Items);
   }
 
   async getLibraries(): Promise<JellydateItem[]> {
@@ -139,13 +153,14 @@ export class JellyfinClient {
     return compactItems(response.data.Items);
   }
 
-  async getMovies(limit = 8): Promise<JellydateItem[]> {
+  async getMovies(limit = 8, startIndex = 0): Promise<JellydateItem[]> {
     const boundedLimit = Number.isFinite(limit)
       ? Math.min(Math.max(Math.floor(limit), 1), 100)
       : 8;
     const response = await getItemsApi(this.api).getItems({
       userId: this.currentUser.id,
       limit: boundedLimit,
+      startIndex: Math.max(0, Math.floor(startIndex)),
       recursive: true,
       includeItemTypes: ['Movie'],
       sortBy: ['SortName'],
@@ -156,13 +171,14 @@ export class JellyfinClient {
     return compactItems(response.data.Items);
   }
 
-  async getTvSeries(limit = 8): Promise<JellydateItem[]> {
+  async getTvSeries(limit = 8, startIndex = 0): Promise<JellydateItem[]> {
     const boundedLimit = Number.isFinite(limit)
       ? Math.min(Math.max(Math.floor(limit), 1), 100)
       : 8;
     const response = await getItemsApi(this.api).getItems({
       userId: this.currentUser.id,
       limit: boundedLimit,
+      startIndex: Math.max(0, Math.floor(startIndex)),
       recursive: true,
       includeItemTypes: ['Series'],
       sortBy: ['SortName'],
@@ -173,8 +189,8 @@ export class JellyfinClient {
     return compactItems(response.data.Items);
   }
 
-  async getSeasons(seriesId: string, limit = 50): Promise<JellydateItem[]> {
-    return this.getChildren(seriesId, ['Season'], limit);
+  async getSeasons(seriesId: string, limit = 50, startIndex = 0): Promise<JellydateItem[]> {
+    return this.getChildren(seriesId, ['Season'], limit, startIndex);
   }
 
   async getEpisodes(seasonId: string, limit = 50, startIndex = 0): Promise<JellydateItem[]> {

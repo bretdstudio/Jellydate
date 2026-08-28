@@ -72,6 +72,8 @@ typedef struct {
     int menu_selected;
     int tv_series_selected;
     int tv_season_selected;
+    uint16_t tv_series_page_start;
+    uint16_t tv_season_page_start;
     int catalog_has_more;
     uint16_t catalog_page_start;
     JDHomeItem home_items[JD_HOME_MAX_ITEMS];
@@ -507,6 +509,8 @@ int jd_app_update(void* userdata) {
                 app.tv_season_id[0] = '\0';
                 app.tv_series_selected = 0;
                 app.tv_season_selected = 0;
+                app.tv_series_page_start = 0;
+                app.tv_season_page_start = 0;
             }
             queue_catalog_request(app.catalog_kind, app.catalog_parent_id);
         }
@@ -529,7 +533,7 @@ int jd_app_update(void* userdata) {
             if (app.catalog_kind == JD_CATALOG_TV_EPISODES) {
                 app.catalog_kind = JD_CATALOG_TV_SEASONS;
                 app.catalog_has_more = 0;
-                app.catalog_page_start = 0;
+                app.catalog_page_start = app.tv_season_page_start;
                 snprintf(
                     app.catalog_parent_id, sizeof(app.catalog_parent_id), "%s",
                     app.tv_series_id
@@ -544,7 +548,7 @@ int jd_app_update(void* userdata) {
             } else if (app.catalog_kind == JD_CATALOG_TV_SEASONS) {
                 app.catalog_kind = JD_CATALOG_TV;
                 app.catalog_has_more = 0;
-                app.catalog_page_start = 0;
+                app.catalog_page_start = app.tv_series_page_start;
                 app.catalog_parent_id[0] = '\0';
                 snprintf(app.catalog_title, sizeof(app.catalog_title), "TV SHOWS");
                 app.home_selected = app.tv_series_selected;
@@ -556,30 +560,24 @@ int jd_app_update(void* userdata) {
                 app.mode = JD_APP_MENU;
             }
         } else if (app.home_count > 0 && browse_actions.movement != 0) {
-            if (app.catalog_kind == JD_CATALOG_TV_EPISODES) {
-                if (browse_actions.movement > 0) {
-                    if (app.home_selected < app.home_count - 1) {
-                        app.home_selected += 1;
-                    } else if (app.catalog_has_more) {
-                        app.catalog_page_start += (uint16_t)app.home_count;
-                        app.home_selected = 0;
-                        app.catalog_requested = 0;
-                        queue_catalog_request(app.catalog_kind, app.catalog_parent_id);
-                    }
-                } else if (app.home_selected > 0) {
-                    app.home_selected -= 1;
-                } else if (app.catalog_page_start > 0) {
-                    app.catalog_page_start = app.catalog_page_start >= JD_HOME_MAX_ITEMS
-                        ? app.catalog_page_start - JD_HOME_MAX_ITEMS
-                        : 0;
-                    app.home_selected = JD_HOME_MAX_ITEMS - 1;
+            if (browse_actions.movement > 0) {
+                if (app.home_selected < app.home_count - 1) {
+                    app.home_selected += 1;
+                } else if (app.catalog_has_more) {
+                    app.catalog_page_start += (uint16_t)app.home_count;
+                    app.home_selected = 0;
                     app.catalog_requested = 0;
                     queue_catalog_request(app.catalog_kind, app.catalog_parent_id);
                 }
-            } else {
-                app.home_selected += browse_actions.movement;
-                while (app.home_selected < 0) app.home_selected += app.home_count;
-                while (app.home_selected >= app.home_count) app.home_selected -= app.home_count;
+            } else if (app.home_selected > 0) {
+                app.home_selected -= 1;
+            } else if (app.catalog_page_start > 0) {
+                app.catalog_page_start = app.catalog_page_start >= JD_HOME_MAX_ITEMS
+                    ? app.catalog_page_start - JD_HOME_MAX_ITEMS
+                    : 0;
+                app.home_selected = JD_HOME_MAX_ITEMS - 1;
+                app.catalog_requested = 0;
+                queue_catalog_request(app.catalog_kind, app.catalog_parent_id);
             }
         }
         if (app.mode == JD_APP_CATALOG && !browse_actions.back &&
@@ -587,6 +585,7 @@ int jd_app_update(void* userdata) {
             JDHomeItem* selected = &app.home_items[app.home_selected];
             if (app.catalog_kind == JD_CATALOG_TV) {
                 app.tv_series_selected = app.home_selected;
+                app.tv_series_page_start = app.catalog_page_start;
                 snprintf(app.tv_series_id, sizeof(app.tv_series_id), "%s", selected->id);
                 snprintf(app.tv_series_title, sizeof(app.tv_series_title), "%s", selected->title);
                 snprintf(app.catalog_parent_id, sizeof(app.catalog_parent_id), "%s", selected->id);
@@ -599,6 +598,7 @@ int jd_app_update(void* userdata) {
                 queue_catalog_request(app.catalog_kind, app.catalog_parent_id);
             } else if (app.catalog_kind == JD_CATALOG_TV_SEASONS) {
                 app.tv_season_selected = app.home_selected;
+                app.tv_season_page_start = app.catalog_page_start;
                 snprintf(app.tv_season_id, sizeof(app.tv_season_id), "%s", selected->id);
                 snprintf(app.tv_season_title, sizeof(app.tv_season_title), "%s", selected->title);
                 snprintf(app.catalog_parent_id, sizeof(app.catalog_parent_id), "%s", selected->id);
