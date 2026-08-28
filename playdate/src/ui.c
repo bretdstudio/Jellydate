@@ -215,6 +215,36 @@ void jd_ui_draw_catalog(
     pd->graphics->drawText("CRANK: TUNE", 11, kUTF8Encoding, 275, 222);
 }
 
+void jd_ui_draw_movie_index(int selected) {
+    int index;
+    pd->graphics->clear(kColorWhite);
+    pd->graphics->drawText("JELLYDATE", 9, kUTF8Encoding, 12, 7);
+    pd->graphics->drawLine(12, 28, 388, 28, 2, kColorBlack);
+    pd->graphics->drawText("MOVIES A-Z", 10, kUTF8Encoding, 12, 35);
+
+    for (index = 0; index < 27; index += 1) {
+        char label[2];
+        int column = index % 9;
+        int row = index / 9;
+        int x = 14 + column * 42;
+        int y = 58 + row * 48;
+        int width;
+        label[0] = index == 0 ? '#' : (char)('A' + index - 1);
+        label[1] = '\0';
+        if (index == selected) {
+            pd->graphics->drawRect(x, y, 36, 36, kColorBlack);
+            pd->graphics->drawRect(x + 2, y + 2, 32, 32, kColorBlack);
+        }
+        width = pd->graphics->getTextWidth(
+            NULL, label, 1, kUTF8Encoding, 0
+        );
+        pd->graphics->drawText(label, 1, kUTF8Encoding, x + (36 - width) / 2, y + 8);
+    }
+
+    pd->graphics->drawText("A: OPEN B: HOME", 15, kUTF8Encoding, 12, 222);
+    pd->graphics->drawText("CRANK: LETTER", 13, kUTF8Encoding, 270, 222);
+}
+
 void jd_ui_draw_details(const JDItemDetails* details, int loading) {
     char position[16];
     char duration[16];

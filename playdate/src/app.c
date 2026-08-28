@@ -21,6 +21,7 @@
 #define JD_CATALOG_TV_SEASONS 4
 #define JD_CATALOG_TV_EPISODES 5
 #define JD_MENU_ITEM_COUNT 4
+#define JD_MOVIE_BUCKET_COUNT 27
 
 typedef enum {
     JD_APP_TUNING,
@@ -32,6 +33,7 @@ typedef enum {
     JD_APP_ENDED,
     JD_APP_ERROR,
     JD_APP_MENU,
+    JD_APP_MOVIE_INDEX,
     JD_APP_CATALOG_LOADING,
     JD_APP_CATALOG,
     JD_APP_DETAILS_LOADING,
@@ -48,6 +50,7 @@ typedef struct {
     int play_sent;
     int catalog_requested;
     int catalog_active;
+    int movie_index_active;
     int details_requested;
     int detail_active;
     int catalog_input_armed;
@@ -74,10 +77,14 @@ typedef struct {
     int home_count;
     int home_selected;
     int menu_selected;
+    int movie_letter_selected;
+    int movie_saved_letter;
+    int movie_saved_selected;
     int tv_series_selected;
     int tv_season_selected;
     uint16_t tv_series_page_start;
     uint16_t tv_season_page_start;
+    uint16_t movie_saved_page_start;
     int catalog_has_more;
     uint16_t catalog_page_start;
     JDHomeItem home_items[JD_HOME_MAX_ITEMS];
@@ -140,6 +147,24 @@ static const char* catalog_heading(uint8_t kind) {
     return "CONTINUE WATCHING";
 }
 
+static char movie_bucket_label(int selected) {
+    return selected == 0 ? '#' : (char)('A' + selected - 1);
+}
+
+static void reset_browser_input(void) {
+    app.catalog_input_armed = 0;
+    app.catalog_neutral_frames = 0;
+    app.catalog_input_unlock_ms = app.pd->system->getCurrentTimeMilliseconds() + 250;
+}
+
+static void show_movie_index(void) {
+    app.catalog_active = 0;
+    app.movie_index_active = 1;
+    app.catalog_requested = 0;
+    reset_browser_input();
+    app.mode = JD_APP_MOVIE_INDEX;
+}
+
 static void queue_catalog_request(uint8_t kind, const char* parent_id) {
     uint8_t payload[68];
     size_t parent_length = parent_id == NULL ? 0 : strlen(parent_id);
@@ -151,9 +176,7 @@ static void queue_catalog_request(uint8_t kind, const char* parent_id) {
     payload[3 + parent_length] = (uint8_t)app.catalog_page_start;
     queue_packet(JD_PACKET_HOME_REQUEST, payload, (uint32_t)(4 + parent_length));
     app.catalog_requested = 1;
-    app.catalog_input_armed = 0;
-    app.catalog_neutral_frames = 0;
-    app.catalog_input_unlock_ms = app.pd->system->getCurrentTimeMilliseconds() + 250;
+    reset_browser_input();
     app.mode = JD_APP_CATALOG_LOADING;
 }
 
@@ -166,9 +189,7 @@ static void queue_details_request(const char* item_id) {
     memcpy(payload + 1, item_id, id_length);
     queue_packet(JD_PACKET_ITEM_DETAILS_REQUEST, payload, (uint32_t)(id_length + 1));
     app.details_requested = 1;
-    app.catalog_input_armed = 0;
-    app.catalog_neutral_frames = 0;
-    app.catalog_input_unlock_ms = app.pd->system->getCurrentTimeMilliseconds() + 250;
+    reset_browser_input();
     app.mode = JD_APP_DETAILS_LOADING;
 }
 
@@ -424,6 +445,8 @@ static void on_packet(
                     if (!state->details_requested) {
                         queue_details_request(state->detail_id);
                     }
+                } else if (state->movie_index_active) {
+                    state->mode = JD_APP_MOVIE_INDEX;
                 } else if (state->catalog_active) {
                     if (!state->catalog_requested) {
                         queue_catalog_request(state->catalog_kind, state->catalog_parent_id);
@@ -510,6 +533,8 @@ void jd_app_init(PlaydateAPI* playdate) {
     app.command_sequence = 10;
     app.video_width = 400;
     app.video_height = 240;
+    app.movie_letter_selected = 1;
+    app.movie_saved_letter = 1;
     snprintf(app.title, sizeof(app.title), "UNTITLED TRANSMISSION");
     snprintf(app.status, sizeof(app.status), "channel %d", JELLYDATE_STREAM_PORT);
     /* Run the scheduler faster than the media cadence so a small update-loop
@@ -589,7 +614,8 @@ int jd_app_update(void* userdata) {
         }
         if (browse_actions.select) {
             app.catalog_kind = (uint8_t)app.menu_selected;
-            app.catalog_active = 1;
+            app.catalog_active = app.catalog_kind != JD_CATALOG_MOVIES;
+            app.movie_index_active = app.catalog_kind == JD_CATALOG_MOVIES;
             app.detail_active = 0;
             app.details_requested = 0;
             app.catalog_requested = 0;
@@ -609,6 +635,67 @@ int jd_app_update(void* userdata) {
                 app.tv_series_page_start = 0;
                 app.tv_season_page_start = 0;
             }
+            if (app.catalog_kind == JD_CATALOG_MOVIES) {
+                reset_browser_input();
+                app.mode = JD_APP_MOVIE_INDEX;
+            } else {
+                queue_catalog_request(app.catalog_kind, app.catalog_parent_id);
+            }
+        }
+    } else if (app.mode == JD_APP_MOVIE_INDEX) {
+        browse_actions = jd_controls_update_browser(&app.controls, app.pd);
+        if (!app.catalog_input_armed) {
+            if (!browse_actions.select_held && !browse_actions.back_held &&
+                !browse_actions.select && !browse_actions.back &&
+                browse_actions.movement == 0) {
+                app.catalog_neutral_frames += 1;
+                if (app.catalog_neutral_frames >= 2) app.catalog_input_armed = 1;
+            } else {
+                app.catalog_neutral_frames = 0;
+            }
+            memset(&browse_actions, 0, sizeof(browse_actions));
+        } else if ((int32_t)(now - app.catalog_input_unlock_ms) < 0) {
+            memset(&browse_actions, 0, sizeof(browse_actions));
+        }
+        if (browse_actions.back) {
+            app.movie_index_active = 0;
+            app.mode = JD_APP_MENU;
+        } else if (browse_actions.horizontal != 0) {
+            int row = app.movie_letter_selected / 9;
+            int column = app.movie_letter_selected % 9;
+            column = (column + browse_actions.horizontal + 9) % 9;
+            app.movie_letter_selected = row * 9 + column;
+        } else if (browse_actions.vertical != 0) {
+            int row = app.movie_letter_selected / 9;
+            int column = app.movie_letter_selected % 9;
+            row = (row + browse_actions.vertical + 3) % 3;
+            app.movie_letter_selected = row * 9 + column;
+        } else if (browse_actions.movement != 0) {
+            app.movie_letter_selected += browse_actions.movement;
+            while (app.movie_letter_selected < 0) {
+                app.movie_letter_selected += JD_MOVIE_BUCKET_COUNT;
+            }
+            while (app.movie_letter_selected >= JD_MOVIE_BUCKET_COUNT) {
+                app.movie_letter_selected -= JD_MOVIE_BUCKET_COUNT;
+            }
+        }
+        if (browse_actions.select) {
+            char bucket = movie_bucket_label(app.movie_letter_selected);
+            app.catalog_kind = JD_CATALOG_MOVIES;
+            app.catalog_active = 1;
+            app.movie_index_active = 0;
+            app.catalog_has_more = 0;
+            app.catalog_parent_id[0] = bucket;
+            app.catalog_parent_id[1] = '\0';
+            snprintf(app.catalog_title, sizeof(app.catalog_title), "MOVIES - %c", bucket);
+            if (app.movie_letter_selected == app.movie_saved_letter) {
+                app.catalog_page_start = app.movie_saved_page_start;
+                app.home_selected = app.movie_saved_selected;
+            } else {
+                app.catalog_page_start = 0;
+                app.home_selected = 0;
+            }
+            app.catalog_requested = 0;
             queue_catalog_request(app.catalog_kind, app.catalog_parent_id);
         }
     } else if (app.mode == JD_APP_CATALOG) {
@@ -651,11 +738,35 @@ int jd_app_update(void* userdata) {
                 app.home_selected = app.tv_series_selected;
                 app.catalog_requested = 0;
                 queue_catalog_request(app.catalog_kind, app.catalog_parent_id);
+            } else if (app.catalog_kind == JD_CATALOG_MOVIES &&
+                       app.catalog_parent_id[0] != '\0') {
+                app.movie_saved_letter = app.movie_letter_selected;
+                app.movie_saved_page_start = app.catalog_page_start;
+                app.movie_saved_selected = app.home_selected;
+                show_movie_index();
             } else {
                 app.catalog_active = 0;
                 app.catalog_requested = 0;
+                app.movie_index_active = 0;
                 app.detail_active = 0;
                 app.mode = JD_APP_MENU;
+            }
+        } else if (app.home_count > 0 &&
+                   app.catalog_kind == JD_CATALOG_MOVIES &&
+                   app.catalog_parent_id[0] != '\0' &&
+                   browse_actions.horizontal != 0) {
+            if (browse_actions.horizontal > 0 && app.catalog_has_more) {
+                app.catalog_page_start += (uint16_t)app.home_count;
+                app.home_selected = 0;
+                app.catalog_requested = 0;
+                queue_catalog_request(app.catalog_kind, app.catalog_parent_id);
+            } else if (browse_actions.horizontal < 0 && app.catalog_page_start > 0) {
+                app.catalog_page_start = app.catalog_page_start >= JD_HOME_MAX_ITEMS
+                    ? app.catalog_page_start - JD_HOME_MAX_ITEMS
+                    : 0;
+                app.home_selected = 0;
+                app.catalog_requested = 0;
+                queue_catalog_request(app.catalog_kind, app.catalog_parent_id);
             }
         } else if (app.home_count > 0 && browse_actions.movement != 0) {
             if (browse_actions.movement > 0) {
@@ -848,6 +959,9 @@ int jd_app_update(void* userdata) {
             break;
         case JD_APP_MENU:
             jd_ui_draw_menu(app.menu_selected);
+            break;
+        case JD_APP_MOVIE_INDEX:
+            jd_ui_draw_movie_index(app.movie_letter_selected);
             break;
         case JD_APP_CATALOG_LOADING:
             jd_ui_draw_catalog(

@@ -181,7 +181,7 @@ export class StreamSession {
     let source: JellydateItem[];
     switch (kind) {
       case CatalogKind.Movies:
-        source = await this.jellyfin.getMovies(9, startIndex);
+        source = await this.jellyfin.getMovies(9, startIndex, parentId);
         break;
       case CatalogKind.Tv:
         source = await this.jellyfin.getTvSeries(9, startIndex);
