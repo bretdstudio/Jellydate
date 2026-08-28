@@ -179,7 +179,13 @@ void jd_ui_draw_catalog(
         12, 35, 376, 18, kWrapClip, kAlignTextLeft
     );
     if (loading) {
-        text_centered("consulting the jelly oracle...", 112);
+        static const char* frames[] = {
+            "Loading data.",
+            "Loading data..",
+            "Loading data..."
+        };
+        uint32_t phase = (pd->system->getCurrentTimeMilliseconds() / 250) % 3;
+        text_centered(frames[phase], 112);
         return;
     }
     if (count <= 0) {
