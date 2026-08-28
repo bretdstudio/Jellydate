@@ -177,14 +177,15 @@ export class JellyfinClient {
     return this.getChildren(seriesId, ['Season'], limit);
   }
 
-  async getEpisodes(seasonId: string, limit = 50): Promise<JellydateItem[]> {
-    return this.getChildren(seasonId, ['Episode'], limit);
+  async getEpisodes(seasonId: string, limit = 50, startIndex = 0): Promise<JellydateItem[]> {
+    return this.getChildren(seasonId, ['Episode'], limit, startIndex);
   }
 
   private async getChildren(
     parentId: string,
     includeItemTypes: Array<'Season' | 'Episode'>,
     limit: number,
+    startIndex = 0,
   ): Promise<JellydateItem[]> {
     const boundedLimit = Number.isFinite(limit)
       ? Math.min(Math.max(Math.floor(limit), 1), 100)
@@ -193,6 +194,7 @@ export class JellyfinClient {
       userId: this.currentUser.id,
       parentId,
       limit: boundedLimit,
+      startIndex: Math.max(0, Math.floor(startIndex)),
       recursive: false,
       includeItemTypes,
       sortBy: ['SortName'],

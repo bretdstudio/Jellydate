@@ -47,9 +47,9 @@ Flag bit 0 (`DISCONTINUITY`) means buffered media from the prior timeline must b
 
 ### HOME_RESPONSE payload
 
-`HOME_REQUEST` begins with `u8 catalog_kind`, followed by `u8 parent_id_length + parent_id`. Root catalogs use a zero-length parent id; seasons require a series id and episodes require a season id. A legacy one-byte root request remains accepted.
+`HOME_REQUEST` begins with `u8 catalog_kind`, followed by `u8 parent_id_length + parent_id`, then a big-endian `u16 start_index`. Root catalogs use a zero-length parent id and index zero; seasons require a series id and episodes require a season id. The episode browser advances the index in eight-item pages. Legacy requests that omit the index remain accepted and start at zero.
 
-`HOME_RESPONSE` begins with `u8 item_count`. Each item then contains three length-prefixed UTF-8 fields—`u8 id_length + id`, `u8 title_length + title`, and `u8 subtitle_length + subtitle`—followed by big-endian `u64 position_ms` and `u64 duration_ms`. The bridge returns at most eight entries. Continue Watching preserves Jellyfin resume positions; Movies and TV series are alphabetized; TV drill-down returns seasons and then playable episodes; and Recently Added mixes new movies and episodes. All playable entries include any saved position available from Jellyfin user data.
+`HOME_RESPONSE` begins with `u8 item_count` and `u8 catalog_flags`; flag bit 0 means another page exists. Each item then contains three length-prefixed UTF-8 fields—`u8 id_length + id`, `u8 title_length + title`, and `u8 subtitle_length + subtitle`—followed by big-endian `u64 position_ms` and `u64 duration_ms`. The bridge returns at most eight entries. Continue Watching preserves Jellyfin resume positions; Movies and TV series are alphabetized; TV drill-down returns seasons and then playable episodes; and Recently Added mixes new movies and episodes. Episode pages load automatically when navigation crosses a page boundary. All playable entries include any saved position available from Jellyfin user data.
 
 ### VIDEO_DELTA payload
 

@@ -52,9 +52,10 @@ describe('Jellydate packet protocol', () => {
       positionMs: 1_234n,
       durationMs: 5_678n,
     }]);
-    let cursor = 1;
+    let cursor = 2;
     const idLength = payload.readUInt8(cursor++);
     expect(payload.readUInt8(0)).toBe(1);
+    expect(payload.readUInt8(1)).toBe(0);
     expect(payload.toString('utf8', cursor, cursor + idLength)).toBe('episode-id');
     cursor += idLength;
     const titleLength = payload.readUInt8(cursor++);
@@ -69,20 +70,25 @@ describe('Jellydate packet protocol', () => {
 
   it('decodes catalog requests and rejects unknown catalogs', () => {
     expect(decodeCatalogRequest(Buffer.from([CatalogKind.ContinueWatching])))
-      .toEqual({ kind: CatalogKind.ContinueWatching, parentId: '' });
+      .toEqual({ kind: CatalogKind.ContinueWatching, parentId: '', startIndex: 0 });
     expect(decodeCatalogRequest(Buffer.from([CatalogKind.Movies, 0])))
-      .toEqual({ kind: CatalogKind.Movies, parentId: '' });
+      .toEqual({ kind: CatalogKind.Movies, parentId: '', startIndex: 0 });
     expect(decodeCatalogRequest(Buffer.from([CatalogKind.Tv])))
-      .toEqual({ kind: CatalogKind.Tv, parentId: '' });
+      .toEqual({ kind: CatalogKind.Tv, parentId: '', startIndex: 0 });
     expect(decodeCatalogRequest(Buffer.from([CatalogKind.RecentlyAdded])))
-      .toEqual({ kind: CatalogKind.RecentlyAdded, parentId: '' });
+      .toEqual({ kind: CatalogKind.RecentlyAdded, parentId: '', startIndex: 0 });
     expect(decodeCatalogRequest(Buffer.from([CatalogKind.TvSeasons, 6, ...Buffer.from('series')])))
-      .toEqual({ kind: CatalogKind.TvSeasons, parentId: 'series' });
-    expect(decodeCatalogRequest(Buffer.from([CatalogKind.TvEpisodes, 6, ...Buffer.from('season')])))
-      .toEqual({ kind: CatalogKind.TvEpisodes, parentId: 'season' });
+      .toEqual({ kind: CatalogKind.TvSeasons, parentId: 'series', startIndex: 0 });
+    expect(decodeCatalogRequest(Buffer.from([
+      CatalogKind.TvEpisodes, 6, ...Buffer.from('season'), 0, 16,
+    ]))).toEqual({ kind: CatalogKind.TvEpisodes, parentId: 'season', startIndex: 16 });
     expect(() => decodeCatalogRequest(Buffer.alloc(0))).toThrow(/empty/);
     expect(() => decodeCatalogRequest(Buffer.from([CatalogKind.TvSeasons, 4, 1]))).toThrow(/length/);
     expect(() => decodeCatalogRequest(Buffer.from([99]))).toThrow(/Unknown catalog/);
+  });
+
+  it('marks catalog responses that have another page', () => {
+    expect(encodeHomeItems([], true)).toEqual(Buffer.from([0, 1]));
   });
 
   it('includes the media title in STREAM_INFO', () => {

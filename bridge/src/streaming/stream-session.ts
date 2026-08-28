@@ -164,8 +164,9 @@ export class StreamSession {
   }
 
   private async sendCatalog(request: CatalogRequest): Promise<void> {
-    const { kind, parentId } = request;
+    const { kind, parentId, startIndex } = request;
     let source;
+    let hasMore = false;
     switch (kind) {
       case CatalogKind.Movies:
         source = await this.jellyfin.getMovies(8);
@@ -179,7 +180,9 @@ export class StreamSession {
         break;
       case CatalogKind.TvEpisodes:
         if (!parentId) throw new Error('TV episodes require a season id');
-        source = await this.jellyfin.getEpisodes(parentId, 8);
+        source = await this.jellyfin.getEpisodes(parentId, 9, startIndex);
+        hasMore = source.length > 8;
+        source = source.slice(0, 8);
         break;
       case CatalogKind.RecentlyAdded:
         source = (await this.jellyfin.getHome()).recentlyAdded;
@@ -198,7 +201,7 @@ export class StreamSession {
         subtitle: formatCatalogSubtitle(kind, item),
         positionMs: BigInt(item.positionMs),
         durationMs: BigInt(item.durationMs),
-      }))),
+      })), hasMore),
     );
   }
 

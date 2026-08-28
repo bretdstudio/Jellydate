@@ -79,7 +79,7 @@ playdate/src/ui.*         intentionally tiny pocket-TV presentation
 
 1. Extend the physical-hardware endurance gate from the initial real-time stream to a full movie.
 2. Add Jellyfin lifecycle retry handling and reconnect/keyframe recovery.
-3. Add pagination and compact media details to the Playdate home/Movies/TV browser, then add persistent keyboard-based bridge setup.
+3. Extend the episode browser's automatic eight-item pagination to the root catalogs, add compact media details, then add persistent keyboard-based bridge setup.
 4. Characterize the fixed 5 FPS compressed-delta profile across broader movie content and Wi-Fi conditions; retain the adaptive wire budget as a fallback for unusually weak links.
 
 ## Reliability telemetry

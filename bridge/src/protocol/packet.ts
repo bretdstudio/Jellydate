@@ -94,6 +94,7 @@ export enum CatalogKind {
 export interface CatalogRequest {
   readonly kind: CatalogKind;
   readonly parentId: string;
+  readonly startIndex: number;
 }
 
 export function decodeCatalogRequest(payload: Buffer): CatalogRequest {
@@ -102,15 +103,20 @@ export function decodeCatalogRequest(payload: Buffer): CatalogRequest {
   if (kind < CatalogKind.ContinueWatching || kind > CatalogKind.TvEpisodes) {
     throw new Error(`Unknown catalog kind ${kind}`);
   }
-  if (payload.length === 1) return { kind, parentId: '' };
+  if (payload.length === 1) return { kind, parentId: '', startIndex: 0 };
   const parentLength = payload.readUInt8(1);
-  if (payload.length !== 2 + parentLength) {
+  const parentEnd = 2 + parentLength;
+  if (payload.length !== parentEnd && payload.length !== parentEnd + 2) {
     throw new Error('HOME_REQUEST parent id has invalid length');
   }
-  return { kind, parentId: payload.toString('utf8', 2) };
+  return {
+    kind,
+    parentId: payload.toString('utf8', 2, parentEnd),
+    startIndex: payload.length === parentEnd + 2 ? payload.readUInt16BE(parentEnd) : 0,
+  };
 }
 
-export function encodeHomeItems(items: readonly HomeItem[]): Buffer {
+export function encodeHomeItems(items: readonly HomeItem[], hasMore = false): Buffer {
   const encoded = items.slice(0, 8).map((item) => {
     const id = truncateUtf8(item.id, 63);
     const title = truncateUtf8(item.title, 95);
@@ -130,7 +136,7 @@ export function encodeHomeItems(items: readonly HomeItem[]): Buffer {
     entry.writeBigUInt64BE(item.durationMs, cursor + 8);
     return entry;
   });
-  return Buffer.concat([Buffer.from([encoded.length]), ...encoded]);
+  return Buffer.concat([Buffer.from([encoded.length, hasMore ? 1 : 0]), ...encoded]);
 }
 
 export interface ClientStats {
