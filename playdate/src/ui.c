@@ -422,6 +422,51 @@ void jd_ui_draw_error(const char* detail) {
     text_centered("Jellyfin vanished into the static.", 190);
 }
 
+static void draw_mini_tv(int x, int y, int static_phase) {
+    int line;
+
+    /* Rabbit ears and their round tips. */
+    pd->graphics->drawLine(x + 23, y + 14, x + 12, y + 3, 2, kColorBlack);
+    pd->graphics->drawLine(x + 35, y + 14, x + 46, y + 3, 2, kColorBlack);
+    pd->graphics->drawEllipse(x + 9, y, 6, 6, 1, 0, 360, kColorBlack);
+    pd->graphics->drawEllipse(x + 43, y, 6, 6, 1, 0, 360, kColorBlack);
+    pd->graphics->fillRect(x + 25, y + 13, 8, 3, kColorBlack);
+
+    /* A tiny CRT cabinet with a white face and black control panel. */
+    pd->graphics->fillRect(x + 1, y + 16, 56, 38, kColorBlack);
+    pd->graphics->fillRect(x + 4, y + 19, 39, 32, kColorWhite);
+    pd->graphics->drawRect(x + 6, y + 21, 35, 28, kColorBlack);
+    pd->graphics->fillEllipse(x + 47, y + 21, 6, 6, 0, 360, kColorWhite);
+    pd->graphics->fillEllipse(x + 47, y + 31, 6, 6, 0, 360, kColorWhite);
+    pd->graphics->fillRect(x + 47, y + 43, 2, 2, kColorWhite);
+    pd->graphics->fillRect(x + 52, y + 43, 2, 2, kColorWhite);
+    pd->graphics->fillRect(x + 47, y + 48, 2, 2, kColorWhite);
+    pd->graphics->fillRect(x + 52, y + 48, 2, 2, kColorWhite);
+    pd->graphics->fillRect(x + 8, y + 54, 10, 2, kColorBlack);
+    pd->graphics->fillRect(x + 40, y + 54, 10, 2, kColorBlack);
+
+    if (static_phase == 1) {
+        for (line = 0; line < 3; line += 1) {
+            int inset = (line + static_phase) % 2 == 0 ? 0 : 4;
+            pd->graphics->drawLine(
+                x + 10 + inset, y + 27 + line * 6,
+                x + 37 - inset, y + 27 + line * 6,
+                1, kColorBlack
+            );
+        }
+    } else {
+        /* Friendly face; phase two adds one passing line of television static. */
+        pd->graphics->fillRect(x + 14, y + 29, 3, 7, kColorBlack);
+        pd->graphics->fillRect(x + 30, y + 29, 3, 7, kColorBlack);
+        pd->graphics->fillTriangle(
+            x + 21, y + 39, x + 27, y + 39, x + 24, y + 43, kColorBlack
+        );
+        if (static_phase == 2) {
+            pd->graphics->drawLine(x + 10, y + 37, x + 37, y + 37, 1, kColorBlack);
+        }
+    }
+}
+
 static void draw_transport_overlay(
     const char* title,
     const char* state,
@@ -450,9 +495,13 @@ static void draw_transport_overlay(
     int state_width;
     int buffering_state;
     int scrub_state;
-    int scrub_time_width;
+    int transport_state;
+    int transport_time_width;
+    int text_block_width;
+    int tv_x;
+    int tv_y;
     int right_width;
-    char scrub_time[40];
+    char transport_time[40];
 
     if (video_width == 0 || video_height == 0 ||
         video_x + video_width > 400 || video_y + video_height > 240) {
@@ -509,6 +558,7 @@ static void draw_transport_overlay(
     /* A bordered plaque remains readable over both light and dark frames. */
     buffering_state = strncmp(state, "BUFFERING", 9) == 0;
     scrub_state = strcmp(state, "SCRUB") == 0;
+    transport_state = buffering_state || scrub_state;
     state_width = pd->graphics->getTextWidth(
         NULL,
         buffering_state ? "BUFFERING..." : state,
@@ -516,16 +566,21 @@ static void draw_transport_overlay(
         kUTF8Encoding,
         0
     );
-    scrub_time_width = 0;
-    if (scrub_state) {
-        snprintf(scrub_time, sizeof(scrub_time), "%s / %s", left, right);
-        scrub_time_width = pd->graphics->getTextWidth(
-            NULL, scrub_time, strlen(scrub_time), kUTF8Encoding, 0
+    transport_time_width = 0;
+    if (transport_state) {
+        snprintf(transport_time, sizeof(transport_time), "%s / %s", left, right);
+        transport_time_width = pd->graphics->getTextWidth(
+            NULL, transport_time, strlen(transport_time), kUTF8Encoding, 0
         );
-        if (scrub_time_width > state_width) state_width = scrub_time_width;
+        text_block_width = state_width > transport_time_width
+            ? state_width : transport_time_width;
+        badge_width = 94 + text_block_width;
+        if (badge_width > 360) badge_width = 360;
+        badge_height = 76;
+    } else {
+        badge_width = state_width + (strcmp(state, "PAUSE") == 0 ? 52 : 28);
+        badge_height = 40;
     }
-    badge_width = state_width + (strcmp(state, "PAUSE") == 0 ? 52 : 28);
-    badge_height = scrub_state ? 64 : 40;
     badge_x = center_x - badge_width / 2;
     badge_y = center_y - badge_height / 2;
     pd->graphics->fillRect(
@@ -535,22 +590,31 @@ static void draw_transport_overlay(
     pd->graphics->fillRect(
         badge_x + 2, badge_y + 2, badge_width - 4, badge_height - 4, kColorWhite
     );
-    state_x = badge_x + 14;
-    if (strcmp(state, "PAUSE") == 0) {
+    if (transport_state) {
+        tv_x = badge_x + 12;
+        tv_y = badge_y + 9;
+        draw_mini_tv(
+            tv_x, tv_y,
+            buffering_state
+                ? (int)((pd->system->getCurrentTimeMilliseconds() / 250) % 3)
+                : -1
+        );
+        state_x = badge_x + 82;
+        pd->graphics->drawText(
+            state, strlen(state), kUTF8Encoding, state_x, badge_y + 15
+        );
+        pd->graphics->drawText(
+            transport_time, strlen(transport_time), kUTF8Encoding,
+            state_x, badge_y + 42
+        );
+    } else if (strcmp(state, "PAUSE") == 0) {
+        state_x = badge_x + 14;
         pd->graphics->fillRect(badge_x + 13, badge_y + 10, 5, 20, kColorBlack);
         pd->graphics->fillRect(badge_x + 23, badge_y + 10, 5, 20, kColorBlack);
         state_x = badge_x + 39;
-    }
-    if (scrub_state) {
-        state_x = badge_x + (badge_width - pd->graphics->getTextWidth(
-            NULL, state, strlen(state), kUTF8Encoding, 0
-        )) / 2;
-        pd->graphics->drawText(state, strlen(state), kUTF8Encoding, state_x, badge_y + 7);
-        pd->graphics->drawText(
-            scrub_time, strlen(scrub_time), kUTF8Encoding,
-            badge_x + (badge_width - scrub_time_width) / 2, badge_y + 34
-        );
+        pd->graphics->drawText(state, strlen(state), kUTF8Encoding, state_x, badge_y + 9);
     } else {
+        state_x = badge_x + 14;
         pd->graphics->drawText(state, strlen(state), kUTF8Encoding, state_x, badge_y + 9);
     }
 }
