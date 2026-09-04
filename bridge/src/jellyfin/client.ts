@@ -14,6 +14,7 @@ import { Readable } from 'node:stream';
 import type { Config } from '../config.js';
 import { SCREEN_HEIGHT, SCREEN_WIDTH } from '../protocol/constants.js';
 import type { StreamViewport } from '../protocol/packet.js';
+import { withJellyfinLifecycleRetry } from './lifecycle-retry.js';
 
 const TICKS_PER_MS = 10_000;
 
@@ -319,9 +320,10 @@ export class JellyfinClient {
   }
 
   async reportStart(itemId: string, source: PlayableSource, positionMs: bigint): Promise<void> {
-    await getPlaystateApi(this.api).reportPlaybackStart({
-      playbackStartInfo: playbackInfo(itemId, source, positionMs, false),
-    });
+    await withJellyfinLifecycleRetry(() =>
+      getPlaystateApi(this.api).reportPlaybackStart({
+        playbackStartInfo: playbackInfo(itemId, source, positionMs, false),
+      }));
   }
 
   async reportProgress(
@@ -330,21 +332,23 @@ export class JellyfinClient {
     positionMs: bigint,
     paused: boolean,
   ): Promise<void> {
-    await getPlaystateApi(this.api).reportPlaybackProgress({
-      playbackProgressInfo: playbackInfo(itemId, source, positionMs, paused),
-    });
+    await withJellyfinLifecycleRetry(() =>
+      getPlaystateApi(this.api).reportPlaybackProgress({
+        playbackProgressInfo: playbackInfo(itemId, source, positionMs, paused),
+      }));
   }
 
   async reportStopped(itemId: string, source: PlayableSource, positionMs: bigint): Promise<void> {
-    await getPlaystateApi(this.api).reportPlaybackStopped({
-      playbackStopInfo: {
-        ItemId: itemId,
-        MediaSourceId: source.mediaSourceId,
-        PlaySessionId: source.playSessionId,
-        PositionTicks: Number(positionMs) * TICKS_PER_MS,
-        Failed: false,
-      },
-    });
+    await withJellyfinLifecycleRetry(() =>
+      getPlaystateApi(this.api).reportPlaybackStopped({
+        playbackStopInfo: {
+          ItemId: itemId,
+          MediaSourceId: source.mediaSourceId,
+          PlaySessionId: source.playSessionId,
+          PositionTicks: Number(positionMs) * TICKS_PER_MS,
+          Failed: false,
+        },
+      }));
   }
 }
 

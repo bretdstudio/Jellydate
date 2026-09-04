@@ -15,6 +15,7 @@
 #define JD_VIDEO_START_FRAMES 6
 #define JD_CLIENT_STATS_INTERVAL_MS 1000
 #define JD_RECONNECT_DELAY_MS 2000
+#define JD_KEYFRAME_RETRY_MS 750
 #define JD_CATALOG_CONTINUE_WATCHING 0
 #define JD_CATALOG_MOVIES 1
 #define JD_CATALOG_TV 2
@@ -26,6 +27,7 @@
 
 typedef enum {
     JD_APP_TUNING,
+    JD_APP_RECONNECTING,
     JD_APP_BUFFERING,
     JD_APP_PLAYING,
     JD_APP_PAUSED,
@@ -59,6 +61,7 @@ typedef struct {
     int tv_index_active;
     int setup_requested;
     int setup_testing;
+    int keyframe_requested;
     int setup_selected;
     int text_entry_field;
     int text_entry_selected;
@@ -74,9 +77,11 @@ typedef struct {
     int stream_playing;
     int reconnect_pending;
     int system_resume_pending;
+    int system_resume_requested;
     JDAppMode mode_before_system_pause;
     uint32_t command_sequence;
     uint32_t last_stats_ms;
+    uint32_t keyframe_requested_at_ms;
     uint32_t reconnect_at_ms;
     uint32_t catalog_input_unlock_ms;
     uint64_t position_ms;
@@ -146,13 +151,13 @@ static void write_u32(uint8_t* output, uint32_t value) {
     output[3] = (uint8_t)value;
 }
 
-static void queue_packet(uint8_t type, const uint8_t* payload, uint32_t length) {
+static int queue_packet(uint8_t type, const uint8_t* payload, uint32_t length) {
     uint8_t packet[320];
     size_t encoded = jd_protocol_encode_packet(
         packet, sizeof(packet), type, 0, 0,
         app.command_sequence++, payload, length
     );
-    if (encoded > 0) jd_network_send(&app.network, packet, encoded);
+    return encoded > 0 && jd_network_send(&app.network, packet, encoded);
 }
 
 static void queue_seek(uint64_t milliseconds) {
@@ -162,6 +167,16 @@ static void queue_seek(uint64_t milliseconds) {
         payload[index] = (uint8_t)(milliseconds >> ((7 - index) * 8));
     }
     queue_packet(JD_PACKET_SEEK, payload, sizeof(payload));
+}
+
+static void request_keyframe(void) {
+    uint32_t now = app.pd->system->getCurrentTimeMilliseconds();
+    if (app.keyframe_requested &&
+        now - app.keyframe_requested_at_ms < JD_KEYFRAME_RETRY_MS) return;
+    if (queue_packet(JD_PACKET_KEYFRAME_REQUEST, NULL, 0)) {
+        app.keyframe_requested = 1;
+        app.keyframe_requested_at_ms = now;
+    }
 }
 
 static void queue_play(void) {
@@ -502,6 +517,8 @@ static void on_packet(
             jd_audio_reset();
             jd_video_reset_queue();
             decoded_video_ready = 0;
+            state->keyframe_requested = 0;
+            state->keyframe_requested_at_ms = 0;
             state->stream_playing = 0;
             if (header->payload_length < 24) {
                 snprintf(state->status, sizeof(state->status), "bad stream information");
@@ -550,21 +567,27 @@ static void on_packet(
             if (header->payload_length == jd_video_frame_size()) {
                 memcpy(decoded_video_frame, payload, header->payload_length);
                 decoded_video_ready = 1;
+                state->keyframe_requested = 0;
+                state->keyframe_requested_at_ms = 0;
                 accept_video_frame(state, header, decoded_video_frame);
             }
             break;
         case JD_PACKET_VIDEO_DELTA:
-            if (decoded_video_ready &&
-                jd_video_apply_delta(
-                    decoded_video_frame,
-                    jd_video_frame_size(),
-                    payload,
-                    header->payload_length
-                )) {
+            if (!decoded_video_ready) {
+                request_keyframe();
+            } else if (jd_video_apply_delta(
+                decoded_video_frame,
+                jd_video_frame_size(),
+                payload,
+                header->payload_length
+            )) {
                 accept_video_frame(state, header, decoded_video_frame);
             } else {
-                snprintf(state->status, sizeof(state->status), "bad video delta");
-                state->mode = JD_APP_ERROR;
+                /* Keep the last good picture and rebuild the decoder from a
+                   full frame instead of turning a recoverable wire glitch
+                   into a fatal playback screen. */
+                decoded_video_ready = 0;
+                request_keyframe();
             }
             break;
         case JD_PACKET_AUDIO:
@@ -596,7 +619,11 @@ static void on_packet(
                 }
             } else if (strcmp(state->status, "ready") == 0) {
                 if (state->item_id[0] != '\0') {
-                    if (!state->play_sent) queue_play();
+                    /* READY is emitted once per authenticated connection. A
+                       reconnect must always replay the active item even if a
+                       command flag survived an unusual firmware close path. */
+                    state->play_sent = 0;
+                    queue_play();
                 } else if (state->detail_active) {
                     if (!state->details_requested) {
                         queue_details_request(state->detail_id);
@@ -739,6 +766,17 @@ int jd_app_update(void* userdata) {
     (void)userdata;
     now = app.pd->system->getCurrentTimeMilliseconds();
     if (app.setup_requested) enter_setup();
+    if (app.system_resume_requested) {
+        /* kEventResume is not a safe place to enter the firmware TCP stack.
+           Queue RESUME here so the ordinary network poll flushes it. */
+        app.system_resume_requested = 0;
+        app.paused = 0;
+        app.mode = app.mode_before_system_pause;
+        if (app.network.state == JD_NET_CONNECTED) {
+            queue_packet(JD_PACKET_RESUME, NULL, 0);
+        }
+        jd_audio_set_paused(app.mode_before_system_pause == JD_APP_PLAYING ? 0 : 1);
+    }
     jd_network_poll(&app.network);
     if (app.network.state == JD_NET_CONNECTED && !app.handshake_sent) send_handshake();
     if (app.network.state == JD_NET_FAILED) {
@@ -752,7 +790,6 @@ int jd_app_update(void* userdata) {
             jd_network_close(&app.network);
             app.mode = JD_APP_SETUP;
         } else if (!app.reconnect_pending && settings_usable(&app.settings)) {
-            int reconnecting_browser = app.item_id[0] == '\0';
             snprintf(app.status, sizeof(app.status), "%.76s; reconnecting", app.network.error);
             app.pause_after_seek = app.paused;
             app.paused = 0;
@@ -764,10 +801,13 @@ int jd_app_update(void* userdata) {
             jd_audio_set_paused(1);
             jd_audio_reset();
             jd_video_reset_queue();
+            decoded_video_ready = 0;
+            app.keyframe_requested = 0;
+            app.keyframe_requested_at_ms = 0;
             jd_network_close(&app.network);
             app.reconnect_at_ms = now + JD_RECONNECT_DELAY_MS;
             app.reconnect_pending = 1;
-            app.mode = reconnecting_browser ? JD_APP_TUNING : JD_APP_BUFFERING;
+            app.mode = JD_APP_RECONNECTING;
         }
     }
     if (app.reconnect_pending &&
@@ -776,6 +816,13 @@ int jd_app_update(void* userdata) {
         jd_network_connect(&app.network, app.settings.host, app.settings.port);
     }
     maybe_start_synced_playback(&app);
+    if ((app.mode == JD_APP_BUFFERING ||
+         (app.mode == JD_APP_SEEK_BUFFERING && app.seek_stream_ready)) &&
+        !decoded_video_ready && app.keyframe_requested) {
+        /* A keyframe request can share the command queue with PAUSE and SEEK.
+           Retry until the replacement stream supplies a full decoder frame. */
+        request_keyframe();
+    }
     if (app.mode == JD_APP_PLAYING) {
         audio_playhead_us = jd_audio_playhead_us();
         if (audio_playhead_us > 0) {
@@ -1164,7 +1211,7 @@ int jd_app_update(void* userdata) {
         /* Consume button transitions while a catalog request is in flight so
            one A/B press cannot activate two hierarchy levels. */
         (void)jd_controls_update_browser(&app.controls, app.pd);
-    } else if (app.mode != JD_APP_TUNING) {
+    } else if (app.mode != JD_APP_TUNING && app.mode != JD_APP_RECONNECTING) {
         actions = jd_controls_update(&app.controls, app.pd, app.position_ms, app.duration_ms);
     }
     if (actions.toggle_pause && (app.mode == JD_APP_PLAYING || app.mode == JD_APP_PAUSED)) {
@@ -1231,6 +1278,9 @@ int jd_app_update(void* userdata) {
     switch (app.mode) {
         case JD_APP_TUNING:
             jd_ui_draw_tuning(jd_network_state_text(app.network.state));
+            break;
+        case JD_APP_RECONNECTING:
+            jd_ui_draw_tuning("RECONNECTING...");
             break;
         case JD_APP_BUFFERING:
             jd_ui_draw_tuning("BUFFERING... dramatically");
@@ -1323,9 +1373,9 @@ void jd_app_system_pause(void) {
     app.paused = 1;
     jd_audio_set_paused(1);
     queue_packet(JD_PACKET_PAUSE, NULL, 0);
-    /* The update callback is suspended while the system menu is open, so give
-       this small control packet one immediate opportunity to leave the queue.
-       Do not enter the firmware receive path while the OS is suspending us. */
+    /* Pause must reach the bridge before updates are suspended or its media
+       output can fill the device receive window. This short write has proven
+       safe; the corresponding resume write is deferred above. */
     jd_network_flush(&app.network);
 }
 
@@ -1339,13 +1389,7 @@ void jd_app_system_resume(void) {
     if (!app.system_resume_pending) return;
 
     app.system_resume_pending = 0;
-    app.paused = 0;
-    app.mode = app.mode_before_system_pause;
-    if (app.network.state == JD_NET_CONNECTED) {
-        queue_packet(JD_PACKET_RESUME, NULL, 0);
-        jd_network_flush(&app.network);
-    }
-    jd_audio_set_paused(app.mode_before_system_pause == JD_APP_PLAYING ? 0 : 1);
+    app.system_resume_requested = 1;
 }
 
 void jd_app_shutdown(void) {

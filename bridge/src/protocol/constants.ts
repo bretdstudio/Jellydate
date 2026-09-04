@@ -31,6 +31,7 @@ export enum PacketType {
   Pong = 0x18,
   StreamInfo = 0x19,
   ClientStats = 0x1a,
+  KeyframeRequest = 0x1b,
   HomeRequest = 0x20,
   HomeResponse = 0x21,
   ItemDetailsRequest = 0x22,

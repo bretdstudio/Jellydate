@@ -67,6 +67,7 @@ interface ActiveStream {
   lastProgressReportAtMs: number;
   progressReportInFlight: boolean;
   paused: boolean;
+  forceKeyframe: boolean;
   pausePromise?: Promise<void>;
   resumePlayback?: () => void;
   videoAdvancedPromise?: Promise<void>;
@@ -158,6 +159,10 @@ export class StreamSession {
         break;
       case PacketType.ClientStats:
         this.telemetry.clientStats(this.telemetrySessionId, decodeClientStats(packet.payload));
+        break;
+      case PacketType.KeyframeRequest:
+        if (packet.payload.length !== 0) throw new Error('Invalid KEYFRAME_REQUEST command');
+        if (this.active) this.active.forceKeyframe = true;
         break;
       default:
         throw new Error(`Unexpected client packet type ${packet.type}`);
@@ -259,6 +264,7 @@ export class StreamSession {
       lastProgressReportAtMs: Date.now(),
       progressReportInFlight: false,
       paused: false,
+      forceKeyframe: false,
     };
     this.active = active;
     this.telemetry.playbackStarted(
@@ -361,7 +367,8 @@ export class StreamSession {
         const delta = previousFrame && this.config.videoDeltaFrames
           ? encodeFrameDelta(previousFrame, packed, this.config.videoDeltaRepeatRuns)
           : undefined;
-        const keyframeDue = frameIndex === 0n || frameIndex % keyframeInterval === 0n;
+        const forcedKeyframe = active.forceKeyframe;
+        const keyframeDue = forcedKeyframe || frameIndex === 0n || frameIndex % keyframeInterval === 0n;
         const useDelta = !keyframeDue && delta !== undefined && delta.length < packed.length;
         const payload = useDelta ? delta : packed;
         if (wireBudget &&
@@ -380,6 +387,7 @@ export class StreamSession {
           payload,
         });
         await this.writeMediaPacket(packet);
+        if (!useDelta && forcedKeyframe) active.forceKeyframe = false;
         previousFrame = packed;
         active.positionMs = positionMs;
         this.signalVideoAdvanced(active);

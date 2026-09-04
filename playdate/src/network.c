@@ -140,14 +140,11 @@ void jd_network_poll(JDNetwork* network) {
     available = network->pd->network->tcp->getBytesAvailable(network->connection);
     if (available == 0) return;
 
-    /* A single bounded read per update is ample at the 50 Hz app cadence and
-       avoids hammering the hardware network firmware with repeated
-       getBytesAvailable()/read() pairs. The latter can stall the Playdate run
-       loop under a sustained media stream even when every read is small. */
-    /* Never wait for bytes beyond the availability snapshot: a control packet
-       can pause the sender immediately after flush, so a larger request could
-       otherwise wait forever in the hardware firmware. The post-open timeout
-       above bounds the opposite race where a tiny availability hint is stale. */
+    /* Never ask the firmware to wait for bytes that were not in its
+       availability snapshot. A seek can stop the old stream immediately after
+       this check, and repeated timeout-backed reads at that boundary have
+       triggered the hardware watchdog. One exact, capped read per update keeps
+       the call non-blocking while the protocol parser joins partial packets. */
     wanted = available < sizeof(incoming) ? available : sizeof(incoming);
     read = network->pd->network->tcp->read(network->connection, incoming, wanted);
     if (read < 0) {
@@ -167,6 +164,11 @@ void jd_network_close(JDNetwork* network) {
         network->pd->network->tcp->release(network->connection);
         network->connection = NULL;
     }
+    /* Bytes queued for a dead TCP stream cannot be valid on its successor.
+       In particular, retaining a partial command can crowd out the AUTH/PLAY
+       pair required to recover playback. */
+    network->outgoing_used = 0;
+    network->outgoing_sent = 0;
 }
 
 const char* jd_network_state_text(JDNetworkState state) {
