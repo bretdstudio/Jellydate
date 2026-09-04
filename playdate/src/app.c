@@ -720,7 +720,7 @@ static void send_handshake(void) {
     const uint8_t* token = (const uint8_t*)active->token;
     queue_packet(JD_PACKET_AUTH, token, (uint32_t)strlen(active->token));
     app.handshake_sent = 1;
-    app.mode = app.setup_testing ? JD_APP_SETUP_TESTING : JD_APP_BUFFERING;
+    if (app.setup_testing) app.mode = JD_APP_SETUP_TESTING;
 }
 
 void jd_app_init(PlaydateAPI* playdate) {
@@ -1277,7 +1277,7 @@ int jd_app_update(void* userdata) {
 
     switch (app.mode) {
         case JD_APP_TUNING:
-            jd_ui_draw_tuning(jd_network_state_text(app.network.state));
+            jd_ui_draw_boot();
             break;
         case JD_APP_RECONNECTING:
             jd_ui_draw_tuning("RECONNECTING...");

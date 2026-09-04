@@ -29,6 +29,7 @@ typedef struct {
 
 void jd_ui_init(PlaydateAPI* playdate);
 void jd_ui_shutdown(void);
+void jd_ui_draw_boot(void);
 void jd_ui_draw_tuning(const char* detail);
 void jd_ui_draw_menu(int selected);
 void jd_ui_draw_setup(

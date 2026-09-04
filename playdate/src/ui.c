@@ -100,11 +100,10 @@ void jd_ui_shutdown(void) {
     }
 }
 
-void jd_ui_draw_tuning(const char* detail) {
+void jd_ui_draw_boot(void) {
     uint32_t phase;
     int index;
     if (boot_screen_bitmap != NULL) {
-        (void)detail;
         phase = (pd->system->getCurrentTimeMilliseconds() / 250) % 3;
         pd->graphics->clear(kColorWhite);
         pd->graphics->drawBitmap(boot_screen_bitmap, 0, 0, kBitmapUnflipped);
@@ -118,6 +117,10 @@ void jd_ui_draw_tuning(const char* detail) {
         }
         return;
     }
+    jd_ui_draw_tuning("starting receiver");
+}
+
+void jd_ui_draw_tuning(const char* detail) {
     pd->graphics->clear(kColorWhite);
     text_centered("JELLYDATE", 54);
     text_centered("tuning in...", 91);
