@@ -15,6 +15,7 @@ Research baseline: **August 25, 2026**.
 - Video is held in an eight-frame fixed queue. Playback starts after at least six video frames and 200 ms of audio are ready; the audio playhead then selects eligible video frames. The hardware profile is fixed at 5 FPS, with temporal hysteresis and literal/repeat delta records keeping native-resolution traffic beneath the transport ceiling.
 - The C API exposes crank angle change but not Lua's accelerated-change value. Jellydate derives acceleration from degrees moved per update and commits a seek after 500 ms of inactivity.
 - The Playdate has 16 MB RAM. The eight-frame video queue costs 96 KB. The current three-second 44.1 kHz output-sample ring costs 256 KiB. Both are modest, but the implementation keeps explicit fixed bounds.
+- Detail screens keep one fixed 1,728-byte 96×144 poster buffer. Artwork arrives only after opening an item, so list navigation never competes with a page of image downloads.
 
 ### Jellyfin
 
@@ -47,7 +48,7 @@ Playdate packet parser ─┬→ delta reconstruction → 52-byte framebuffer ro
 
 The native-resolution physical profile uses periodic 12 KB keyframes plus changed-byte deltas whose repeated byte runs receive compact tokens. With a dithering hysteresis of 16 it holds a fixed 5 FPS without the adaptive frame governor. A two-minute hardware soak sustained 5.00 FPS at about 26.2 KiB/s including 8.6 KiB/s audio and control traffic, with a zero-byte final TCP send queue. The 240×144 and 200×120 full-frame profiles remain useful fallbacks.
 
-HTTP is reserved for low-rate discovery and artwork. TCP carries commands and continuous media. The Bridge returns compact item records instead of forwarding large Jellyfin DTOs.
+HTTP remains available for low-rate development and diagnostic APIs. The Playdate uses the authenticated TCP connection for compact catalogs, metadata, selected-item artwork, commands, and continuous media. The Bridge returns compact item records instead of forwarding large Jellyfin DTOs.
 
 ## Repository boundaries
 
@@ -75,12 +76,14 @@ playdate/src/ui.*         intentionally tiny pocket-TV presentation
 5. **One active stream per TCP connection.** A seek tears down FFmpeg and starts a new stream with a discontinuity flag and immediate full frame.
 6. **Bound audio lead at the Bridge.** Independent FFmpeg pipes can become uneven even when both average real time. Audio is held to at most 120 ms ahead of the last transmitted video timestamp so it cannot fill the socket and make video arrive in bursts.
 7. **Pace presentation in Jellydate, not FFmpeg.** FFmpeg real-time input mode tried to catch up after pipe pressure, producing visible frame clusters despite a correct average rate. The Bridge now schedules frames against a monotonic clock and exposes maximum frame-gap telemetry.
+8. **Artwork belongs on details, not list rows.** The Bridge produces a cached 96×144 one-bit poster only for the opened item. The small fixed packet keeps browsing responsive, and missing images fall back to a native Jellydate TV illustration.
 
 ## Next implementation steps
 
-1. Extend the physical-hardware endurance gate from the initial real-time stream to a full movie.
-2. Add Jellyfin lifecycle retry handling and reconnect/keyframe recovery.
-3. Characterize the fixed 5 FPS compressed-delta profile across broader movie content and Wi-Fi conditions; retain the adaptive wire budget as a fallback for unusually weak links.
+1. Refresh and clarify watched/progress state after returning from playback.
+2. Add an optional on-device debug overlay for live stream telemetry.
+3. Extend the physical-hardware endurance gate from the initial real-time stream to a full movie.
+4. Package the Bridge and Playdate build for a cleaner installation flow.
 
 ## Reliability telemetry
 

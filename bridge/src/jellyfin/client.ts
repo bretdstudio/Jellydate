@@ -27,6 +27,7 @@ export interface JellydateItem {
   readonly positionMs: number;
   readonly playedPercentage: number;
   readonly imageTag: string | null;
+  readonly imageItemId: string | null;
   readonly seriesName: string | null;
   readonly seasonName: string | null;
   readonly indexNumber: number | null;
@@ -50,6 +51,8 @@ function ticksToMs(ticks: number | null | undefined): number {
 
 function compactItem(item: BaseItemDto): JellydateItem | null {
   if (!item.Id || !item.Name) return null;
+  const primaryImageTag = item.ImageTags?.Primary ?? null;
+  const seriesImageTag = item.SeriesPrimaryImageTag ?? null;
   return {
     id: item.Id,
     name: item.Name,
@@ -58,7 +61,10 @@ function compactItem(item: BaseItemDto): JellydateItem | null {
     durationMs: ticksToMs(item.RunTimeTicks),
     positionMs: ticksToMs(item.UserData?.PlaybackPositionTicks),
     playedPercentage: item.UserData?.PlayedPercentage ?? 0,
-    imageTag: item.ImageTags?.Primary ?? item.SeriesPrimaryImageTag ?? null,
+    imageTag: primaryImageTag ?? seriesImageTag,
+    imageItemId: primaryImageTag
+      ? item.Id
+      : (seriesImageTag && item.SeriesId ? item.SeriesId : null),
     seriesName: item.SeriesName ?? null,
     seasonName: item.SeasonName ?? null,
     indexNumber: item.IndexNumber ?? null,
@@ -268,9 +274,9 @@ export class JellyfinClient {
     return item;
   }
 
-  async getPrimaryImage(itemId: string): Promise<Buffer> {
+  async getPrimaryImage(itemId: string, maxWidth = 400, maxHeight = 240): Promise<Buffer> {
     const response = await getImageApi(this.api).getItemImage(
-      { itemId, imageType: 'Primary', maxWidth: 400, maxHeight: 240, quality: 90 },
+      { itemId, imageType: 'Primary', maxWidth, maxHeight, quality: 90 },
       { responseType: 'arraybuffer' },
     );
     return Buffer.from(response.data as unknown as ArrayBuffer);

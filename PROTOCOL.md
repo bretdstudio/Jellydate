@@ -44,6 +44,8 @@ All integers are unsigned and big-endian. Video pixels inside a byte are MSB-fir
 | `21` | `HOME_RESPONSE` | Bridge → client | up to eight entries from the requested catalog with resume metadata |
 | `22` | `ITEM_DETAILS_REQUEST` | client → Bridge | request compact metadata for one Jellyfin item id |
 | `23` | `ITEM_DETAILS_RESPONSE` | Bridge → client | title, context, overview, runtime, and resume position |
+| `24` | `ITEM_ARTWORK_REQUEST` | client → Bridge | request detail artwork for one Jellyfin item id |
+| `25` | `ITEM_ARTWORK_RESPONSE` | Bridge → client | optional 96×144 packed one-bit poster |
 
 Flag bit 0 (`DISCONTINUITY`) means buffered media from the prior timeline must be discarded. It is set on `STREAM_INFO` after play/seek and on the first following keyframe.
 
@@ -56,6 +58,10 @@ Flag bit 0 (`DISCONTINUITY`) means buffered media from the prior timeline must b
 ### ITEM_DETAILS payloads
 
 `ITEM_DETAILS_REQUEST` contains `u8 item_id_length + item_id`. `ITEM_DETAILS_RESPONSE` contains `u8 title_length + title`, `u8 subtitle_length + subtitle`, `u16 overview_length + overview`, then big-endian `u64 position_ms` and `u64 duration_ms`. The subtitle provides compact media context such as movie type and year or series, season, and episode number. Playdate uses the saved position to label the primary action `RESUME` and begin playback at that point.
+
+### ITEM_ARTWORK payloads
+
+`ITEM_ARTWORK_REQUEST` uses the same `u8 item_id_length + item_id` payload as the details request. An unavailable `ITEM_ARTWORK_RESPONSE` is the single byte `0`. An available response begins with `u8 available = 1`, big-endian `u16 width = 96`, and big-endian `u16 height = 144`, followed by 1,728 bytes of row-major, MSB-first packed pixels. The Bridge crops, sharpens, and ordered-dithers the selected item’s primary image, caches it by Jellyfin image tag and output size, and sends artwork only for an opened detail screen. Episodes without their own primary art use the series primary image when Jellyfin provides one.
 
 ### VIDEO_DELTA payload
 

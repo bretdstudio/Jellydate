@@ -8,9 +8,9 @@ export function buildApp(
   config: Config,
   jellyfin: JellyfinClient,
   telemetry: PlaybackTelemetry,
+  posters: PosterService,
 ): FastifyInstance {
   const app = Fastify({ logger: { redact: ['req.headers.x-jellydate-token', 'req.headers.authorization'] } });
-  const posters = new PosterService();
 
   app.get('/health', async () => ({
     ok: true,
@@ -47,9 +47,14 @@ export function buildApp(
     item: await jellyfin.getItem(request.params.id),
   }));
   app.get<{ Params: { id: string } }>('/api/items/:id/image', async (request, reply) => {
+    const item = await jellyfin.getItem(request.params.id);
+    if (!item.imageItemId || !item.imageTag) {
+      return reply.code(404).send({ error: 'ARTWORK NOT AVAILABLE' });
+    }
     const image = await posters.convert(
-      request.params.id,
-      () => jellyfin.getPrimaryImage(request.params.id),
+      `${item.imageItemId}:${item.imageTag}`,
+      () => jellyfin.getPrimaryImage(item.imageItemId!),
+      { width: 400, height: 240, fit: 'contain' },
     );
     return reply
       .header('content-type', 'application/vnd.jellydate.bitmap')

@@ -6,6 +6,9 @@ export const SCREEN_WIDTH = 400;
 export const SCREEN_HEIGHT = 240;
 export const PACKED_ROW_BYTES = SCREEN_WIDTH / 8;
 export const PACKED_FRAME_BYTES = PACKED_ROW_BYTES * SCREEN_HEIGHT;
+export const DETAIL_ARTWORK_WIDTH = 96;
+export const DETAIL_ARTWORK_HEIGHT = 144;
+export const DETAIL_ARTWORK_BYTES = DETAIL_ARTWORK_WIDTH / 8 * DETAIL_ARTWORK_HEIGHT;
 
 export enum AudioSampleFormat {
   Signed16LittleEndian = 1,
@@ -36,6 +39,8 @@ export enum PacketType {
   HomeResponse = 0x21,
   ItemDetailsRequest = 0x22,
   ItemDetailsResponse = 0x23,
+  ItemArtworkRequest = 0x24,
+  ItemArtworkResponse = 0x25,
 }
 
 export enum PacketFlags {

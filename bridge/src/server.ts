@@ -3,18 +3,21 @@ import { buildApp } from './app.js';
 import { JellyfinClient } from './jellyfin/client.js';
 import { createStreamServer } from './streaming/tcp-server.js';
 import { PlaybackTelemetry } from './telemetry/playback-telemetry.js';
+import { PosterService } from './images/poster.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
   const jellyfin = new JellyfinClient(config);
   await jellyfin.connect();
   const telemetry = new PlaybackTelemetry();
+  const posters = new PosterService();
 
-  const app = buildApp(config, jellyfin, telemetry);
+  const app = buildApp(config, jellyfin, telemetry, posters);
   const streamServer = createStreamServer(
     config,
     jellyfin,
     telemetry,
+    posters,
     (message) => app.log.info(message),
   );
   await new Promise<void>((resolve, reject) => {

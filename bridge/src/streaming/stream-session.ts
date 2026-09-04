@@ -5,6 +5,8 @@ import type { Config } from '../config.js';
 import type { JellydateItem, JellyfinClient, PlayableSource } from '../jellyfin/client.js';
 import {
   AudioSampleFormat,
+  DETAIL_ARTWORK_HEIGHT,
+  DETAIL_ARTWORK_WIDTH,
   HEADER_SIZE,
   PacketFlags,
   PacketType,
@@ -16,6 +18,7 @@ import {
   decodePlayCommand,
   decodeClientStats,
   encodeHomeItems,
+  encodeItemArtwork,
   encodeItemDetails,
   encodePacket,
   encodeStreamInfo,
@@ -27,6 +30,7 @@ import { orderedDither8x8 } from '../transcoder/dither.js';
 import { encodeFrameDelta } from '../transcoder/delta.js';
 import { spawnRawVideo, type RawVideoProcess } from '../transcoder/ffmpeg.js';
 import type { PlaybackTelemetry } from '../telemetry/playback-telemetry.js';
+import type { PosterService } from '../images/poster.js';
 import { WireBudget } from './wire-budget.js';
 
 const AUDIO_CHUNK_DURATION_MS = 40;
@@ -88,6 +92,7 @@ export class StreamSession {
     private readonly socket: Socket,
     private readonly config: Config,
     private readonly jellyfin: JellyfinClient,
+    private readonly posters: PosterService,
     private readonly telemetry: PlaybackTelemetry,
     private readonly telemetrySessionId: number,
     private readonly log: (message: string) => void,
@@ -129,6 +134,9 @@ export class StreamSession {
         break;
       case PacketType.ItemDetailsRequest:
         await this.sendItemDetails(decodeItemDetailsRequest(packet.payload));
+        break;
+      case PacketType.ItemArtworkRequest:
+        await this.sendItemArtwork(decodeItemDetailsRequest(packet.payload));
         break;
       case PacketType.Pause:
         if (this.active) this.pauseActive(this.active);
@@ -231,6 +239,37 @@ export class StreamSession {
       positionMs: BigInt(item.positionMs),
       durationMs: BigInt(item.durationMs),
     }));
+  }
+
+  private async sendItemArtwork(itemId: string): Promise<void> {
+    try {
+      const item = await this.jellyfin.getItem(itemId);
+      if (!item.imageItemId || !item.imageTag) {
+        this.send(PacketType.ItemArtworkResponse, encodeItemArtwork());
+        return;
+      }
+      const packed = await this.posters.convert(
+        `${item.imageItemId}:${item.imageTag}`,
+        () => this.jellyfin.getPrimaryImage(
+          item.imageItemId!,
+          DETAIL_ARTWORK_WIDTH,
+          DETAIL_ARTWORK_HEIGHT,
+        ),
+        {
+          width: DETAIL_ARTWORK_WIDTH,
+          height: DETAIL_ARTWORK_HEIGHT,
+          fit: 'cover',
+        },
+      );
+      this.send(PacketType.ItemArtworkResponse, encodeItemArtwork({
+        width: DETAIL_ARTWORK_WIDTH,
+        height: DETAIL_ARTWORK_HEIGHT,
+        packed,
+      }));
+    } catch (error) {
+      this.log(`artwork unavailable for ${itemId}: ${safeMessage(error)}`);
+      this.send(PacketType.ItemArtworkResponse, encodeItemArtwork());
+    }
   }
 
   private async play(command: { itemId: string; startMs: bigint }): Promise<void> {

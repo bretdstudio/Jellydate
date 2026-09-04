@@ -66,6 +66,7 @@ typedef struct {
     int text_entry_field;
     int text_entry_selected;
     int details_requested;
+    int artwork_requested;
     int detail_active;
     int catalog_input_armed;
     int catalog_neutral_frames;
@@ -107,6 +108,7 @@ typedef struct {
     uint16_t catalog_page_start;
     JDHomeItem home_items[JD_HOME_MAX_ITEMS];
     JDItemDetails detail;
+    JDItemArtwork detail_artwork;
     JDSettings settings;
     JDSettings setup_draft;
     char item_id[64];
@@ -214,6 +216,7 @@ static void reset_network(void) {
     app.play_sent = 0;
     app.catalog_requested = 0;
     app.details_requested = 0;
+    app.artwork_requested = 0;
     app.reconnect_pending = 0;
 }
 
@@ -348,6 +351,17 @@ static void queue_details_request(const char* item_id) {
     app.mode = JD_APP_DETAILS_LOADING;
 }
 
+static void queue_artwork_request(const char* item_id) {
+    uint8_t payload[64];
+    size_t id_length = item_id == NULL ? 0 : strlen(item_id);
+    if (id_length == 0) return;
+    if (id_length > 63) id_length = 63;
+    payload[0] = (uint8_t)id_length;
+    memcpy(payload + 1, item_id, id_length);
+    queue_packet(JD_PACKET_ITEM_ARTWORK_REQUEST, payload, (uint32_t)(id_length + 1));
+    app.artwork_requested = 1;
+}
+
 static int parse_home_items(JDApp* state, const uint8_t* payload, size_t length) {
     size_t cursor = 0;
     int count;
@@ -434,6 +448,22 @@ static int parse_item_details(JDApp* state, const uint8_t* payload, size_t lengt
     if (length - cursor != 16) return 0;
     detail->position_ms = jd_protocol_read_u64(payload + cursor);
     detail->duration_ms = jd_protocol_read_u64(payload + cursor + 8);
+    return 1;
+}
+
+static int parse_item_artwork(JDApp* state, const uint8_t* payload, size_t length) {
+    uint16_t width;
+    uint16_t height;
+    if (length == 1 && payload[0] == 0) {
+        state->detail_artwork.state = JD_ARTWORK_MISSING;
+        return 1;
+    }
+    if (length != 5 + JD_DETAIL_ARTWORK_BYTES || payload[0] != 1) return 0;
+    width = jd_protocol_read_u16(payload + 1);
+    height = jd_protocol_read_u16(payload + 3);
+    if (width != JD_DETAIL_ARTWORK_WIDTH || height != JD_DETAIL_ARTWORK_HEIGHT) return 0;
+    memcpy(state->detail_artwork.packed, payload + 5, JD_DETAIL_ARTWORK_BYTES);
+    state->detail_artwork.state = JD_ARTWORK_READY;
     return 1;
 }
 
@@ -628,6 +658,9 @@ static void on_packet(
                     if (!state->details_requested) {
                         queue_details_request(state->detail_id);
                     }
+                    if (!state->artwork_requested) {
+                        queue_artwork_request(state->detail_id);
+                    }
                 } else if (state->movie_index_active) {
                     state->mode = JD_APP_MOVIE_INDEX;
                 } else if (state->tv_index_active) {
@@ -677,6 +710,12 @@ static void on_packet(
                 state->mode = JD_APP_ERROR;
             } else {
                 state->mode = JD_APP_DETAILS;
+            }
+            break;
+        case JD_PACKET_ITEM_ARTWORK_RESPONSE:
+            if (!parse_item_artwork(state, payload, header->payload_length)) {
+                state->detail_artwork.state = JD_ARTWORK_MISSING;
+                state->pd->system->logToConsole("Ignored malformed item artwork");
             }
             break;
         case JD_PACKET_END_OF_STREAM:
@@ -798,6 +837,7 @@ int jd_app_update(void* userdata) {
             app.play_sent = 0;
             app.catalog_requested = 0;
             app.details_requested = 0;
+            app.artwork_requested = 0;
             jd_audio_set_paused(1);
             jd_audio_reset();
             jd_video_reset_queue();
@@ -937,6 +977,7 @@ int jd_app_update(void* userdata) {
             app.tv_index_active = app.catalog_kind == JD_CATALOG_TV;
             app.detail_active = 0;
             app.details_requested = 0;
+            app.artwork_requested = 0;
             app.catalog_requested = 0;
             app.catalog_has_more = 0;
             app.catalog_page_start = 0;
@@ -1098,6 +1139,7 @@ int jd_app_update(void* userdata) {
                 app.movie_index_active = 0;
                 app.tv_index_active = 0;
                 app.detail_active = 0;
+                app.artwork_requested = 0;
                 app.mode = JD_APP_MENU;
             }
         } else if (app.home_count > 0 &&
@@ -1171,12 +1213,15 @@ int jd_app_update(void* userdata) {
             } else {
                 snprintf(app.detail_id, sizeof(app.detail_id), "%s", selected->id);
                 memset(&app.detail, 0, sizeof(app.detail));
+                memset(&app.detail_artwork, 0, sizeof(app.detail_artwork));
                 snprintf(app.detail.title, sizeof(app.detail.title), "%s", selected->title);
                 app.detail.position_ms = selected->position_ms;
                 app.detail.duration_ms = selected->duration_ms;
                 app.detail_active = 1;
                 app.details_requested = 0;
+                app.artwork_requested = 0;
                 queue_details_request(app.detail_id);
+                queue_artwork_request(app.detail_id);
             }
         }
     } else if (app.mode == JD_APP_DETAILS) {
@@ -1197,6 +1242,7 @@ int jd_app_update(void* userdata) {
         if (browse_actions.back) {
             app.detail_active = 0;
             app.details_requested = 0;
+            app.artwork_requested = 0;
             app.mode = JD_APP_CATALOG;
         } else if (browse_actions.select) {
             begin_playback(
@@ -1352,10 +1398,10 @@ int jd_app_update(void* userdata) {
             );
             break;
         case JD_APP_DETAILS_LOADING:
-            jd_ui_draw_details(&app.detail, 1);
+            jd_ui_draw_details(&app.detail, &app.detail_artwork, 1);
             break;
         case JD_APP_DETAILS:
-            jd_ui_draw_details(&app.detail, 0);
+            jd_ui_draw_details(&app.detail, &app.detail_artwork, 0);
             break;
         case JD_APP_PLAYING:
             break;

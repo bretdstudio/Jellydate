@@ -6,11 +6,14 @@
 static PlaydateAPI* pd;
 static LCDBitmap* scaled_text_bitmap;
 static LCDBitmap* boot_screen_bitmap;
+static LCDBitmap* detail_artwork_bitmap;
 
 #define TITLE_TEXT_SCALE 1.15f
 #define META_TEXT_SCALE 0.82f
 #define SCALED_TEXT_BITMAP_WIDTH 480
 #define SCALED_TEXT_BITMAP_HEIGHT 24
+
+static void draw_mini_tv(int x, int y, int static_phase);
 
 static void text_centered(const char* text, int y) {
     int width = pd->graphics->getTextWidth(NULL, text, strlen(text), kUTF8Encoding, 0);
@@ -84,6 +87,9 @@ void jd_ui_init(PlaydateAPI* playdate) {
     boot_screen_bitmap = pd->graphics->loadBitmap(
         "images/jellydate-boot", &bitmap_error
     );
+    detail_artwork_bitmap = pd->graphics->newBitmap(
+        JD_DETAIL_ARTWORK_WIDTH, JD_DETAIL_ARTWORK_HEIGHT, kColorWhite
+    );
     if (boot_screen_bitmap == NULL && bitmap_error != NULL) {
         pd->system->logToConsole("Could not load Jellydate boot art: %s", bitmap_error);
     }
@@ -97,6 +103,10 @@ void jd_ui_shutdown(void) {
     if (boot_screen_bitmap != NULL) {
         pd->graphics->freeBitmap(boot_screen_bitmap);
         boot_screen_bitmap = NULL;
+    }
+    if (detail_artwork_bitmap != NULL) {
+        pd->graphics->freeBitmap(detail_artwork_bitmap);
+        detail_artwork_bitmap = NULL;
     }
 }
 
@@ -372,7 +382,67 @@ void jd_ui_draw_alpha_index(const char* heading, int selected) {
     pd->graphics->drawText("CRANK: LETTER", 13, kUTF8Encoding, 270, 222);
 }
 
-void jd_ui_draw_details(const JDItemDetails* details, int loading) {
+static void draw_detail_artwork(const JDItemArtwork* artwork) {
+    static const char* loading_frames[] = { ".", "..", "..." };
+    int panel_x = 12;
+    int panel_y = 62;
+    int panel_width = JD_DETAIL_ARTWORK_WIDTH + 4;
+    int panel_height = JD_DETAIL_ARTWORK_HEIGHT + 4;
+    const char* label;
+    int label_width;
+
+    pd->graphics->drawRect(panel_x, panel_y, panel_width, panel_height, kColorBlack);
+    pd->graphics->drawRect(
+        panel_x + 2, panel_y + 2, panel_width - 4, panel_height - 4, kColorBlack
+    );
+    if (artwork != NULL && artwork->state == JD_ARTWORK_READY &&
+        detail_artwork_bitmap != NULL) {
+        uint8_t* data = NULL;
+        int rowbytes = 0;
+        int row;
+        pd->graphics->clearBitmap(detail_artwork_bitmap, kColorWhite);
+        pd->graphics->getBitmapData(
+            detail_artwork_bitmap, NULL, NULL, &rowbytes, NULL, &data
+        );
+        if (data != NULL && rowbytes >= JD_DETAIL_ARTWORK_WIDTH / 8) {
+            for (row = 0; row < JD_DETAIL_ARTWORK_HEIGHT; row += 1) {
+                memcpy(
+                    data + row * rowbytes,
+                    artwork->packed + row * (JD_DETAIL_ARTWORK_WIDTH / 8),
+                    JD_DETAIL_ARTWORK_WIDTH / 8
+                );
+            }
+            pd->graphics->drawBitmap(
+                detail_artwork_bitmap, panel_x + 2, panel_y + 2, kBitmapUnflipped
+            );
+            return;
+        }
+    }
+
+    draw_mini_tv(
+        panel_x + 21,
+        panel_y + 30,
+        artwork != NULL && artwork->state == JD_ARTWORK_LOADING
+            ? (int)((pd->system->getCurrentTimeMilliseconds() / 250) % 3)
+            : -1
+    );
+    label = artwork != NULL && artwork->state == JD_ARTWORK_LOADING
+        ? loading_frames[(pd->system->getCurrentTimeMilliseconds() / 250) % 3]
+        : "NO ART";
+    label_width = pd->graphics->getTextWidth(
+        NULL, label, strlen(label), kUTF8Encoding, 0
+    );
+    pd->graphics->drawText(
+        label, strlen(label), kUTF8Encoding,
+        panel_x + (panel_width - label_width) / 2, panel_y + 112
+    );
+}
+
+void jd_ui_draw_details(
+    const JDItemDetails* details,
+    const JDItemArtwork* artwork,
+    int loading
+) {
     char position[16];
     char duration[16];
     int duration_width;
@@ -388,23 +458,24 @@ void jd_ui_draw_details(const JDItemDetails* details, int loading) {
     }
 
     scaled_text(details->title, 12, 36, 376, TITLE_TEXT_SCALE);
-    scaled_text(details->subtitle, 12, 61, 376, META_TEXT_SCALE);
-    progress(20, 84, 360, 7, details->position_ms, details->duration_ms);
+    draw_detail_artwork(artwork);
+    scaled_text(details->subtitle, 124, 61, 264, META_TEXT_SCALE);
+    progress(124, 87, 264, 7, details->position_ms, details->duration_ms);
     format_time(position, sizeof(position), details->position_ms);
     format_time(duration, sizeof(duration), details->duration_ms);
     duration_width = pd->graphics->getTextWidth(
         NULL, duration, strlen(duration), kUTF8Encoding, 0
     );
-    pd->graphics->drawText(position, strlen(position), kUTF8Encoding, 20, 96);
+    pd->graphics->drawText(position, strlen(position), kUTF8Encoding, 124, 99);
     pd->graphics->drawText(
         duration, strlen(duration), kUTF8Encoding,
-        380 - duration_width, 96
+        388 - duration_width, 99
     );
-    pd->graphics->drawText("ABOUT", 5, kUTF8Encoding, 12, 121);
-    pd->graphics->drawLine(12, 140, 388, 140, 1, kColorBlack);
+    pd->graphics->drawText("ABOUT", 5, kUTF8Encoding, 124, 123);
+    pd->graphics->drawLine(124, 142, 388, 142, 1, kColorBlack);
     pd->graphics->drawTextInRect(
         details->overview, strlen(details->overview), kUTF8Encoding,
-        12, 146, 376, 65, kWrapWord, kAlignTextLeft
+        124, 148, 264, 62, kWrapWord, kAlignTextLeft
     );
 
     action = details->position_ms > 0 ? "A: RESUME" : "A: WATCH";

@@ -7,6 +7,7 @@ import {
   decodePlayCommand,
   decodeClientStats,
   encodeHomeItems,
+  encodeItemArtwork,
   encodeItemDetails,
   encodeItemDetailsRequest,
   encodePacket,
@@ -126,6 +127,18 @@ describe('Jellydate packet protocol', () => {
     cursor += overviewLength;
     expect(payload.readBigUInt64BE(cursor)).toBe(12_345n);
     expect(payload.readBigUInt64BE(cursor + 8)).toBe(98_765n);
+  });
+
+  it('encodes compact artwork and an explicit unavailable fallback', () => {
+    const packed = Buffer.alloc(12 * 144, 0xa5);
+    const payload = encodeItemArtwork({ width: 96, height: 144, packed });
+    expect(payload.readUInt8(0)).toBe(1);
+    expect(payload.readUInt16BE(1)).toBe(96);
+    expect(payload.readUInt16BE(3)).toBe(144);
+    expect(payload.subarray(5)).toEqual(packed);
+    expect(encodeItemArtwork()).toEqual(Buffer.from([0]));
+    expect(() => encodeItemArtwork({ width: 95, height: 144, packed }))
+      .toThrow(/dimensions/);
   });
 
   it('includes the media title in STREAM_INFO', () => {

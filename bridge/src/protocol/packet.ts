@@ -183,6 +183,30 @@ export function encodeItemDetails(details: ItemDetails): Buffer {
   return payload;
 }
 
+export interface ItemArtwork {
+  readonly width: number;
+  readonly height: number;
+  readonly packed: Buffer;
+}
+
+export function encodeItemArtwork(artwork?: ItemArtwork): Buffer {
+  if (!artwork) return Buffer.from([0]);
+  if (artwork.width < 8 || artwork.width % 8 !== 0 || artwork.height < 1 ||
+      artwork.width > 0xffff || artwork.height > 0xffff) {
+    throw new Error('Artwork dimensions are invalid');
+  }
+  const expectedBytes = artwork.width / 8 * artwork.height;
+  if (artwork.packed.length !== expectedBytes) {
+    throw new Error(`Expected ${expectedBytes} artwork bytes, got ${artwork.packed.length}`);
+  }
+  const payload = Buffer.allocUnsafe(5 + artwork.packed.length);
+  payload.writeUInt8(1, 0);
+  payload.writeUInt16BE(artwork.width, 1);
+  payload.writeUInt16BE(artwork.height, 3);
+  artwork.packed.copy(payload, 5);
+  return payload;
+}
+
 export interface ClientStats {
   readonly queuedVideoFrames: number;
   readonly droppedVideoFrames: number;
