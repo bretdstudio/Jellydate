@@ -413,10 +413,14 @@ static void draw_transport_overlay(
     int badge_x;
     int badge_y;
     int badge_width;
+    int badge_height;
     int state_x;
     int state_width;
     int buffering_state;
+    int scrub_state;
+    int scrub_time_width;
     int right_width;
+    char scrub_time[40];
 
     if (video_width == 0 || video_height == 0 ||
         video_x + video_width > 400 || video_y + video_height > 240) {
@@ -472,6 +476,7 @@ static void draw_transport_overlay(
 
     /* A bordered plaque remains readable over both light and dark frames. */
     buffering_state = strncmp(state, "BUFFERING", 9) == 0;
+    scrub_state = strcmp(state, "SCRUB") == 0;
     state_width = pd->graphics->getTextWidth(
         NULL,
         buffering_state ? "BUFFERING..." : state,
@@ -479,19 +484,43 @@ static void draw_transport_overlay(
         kUTF8Encoding,
         0
     );
+    scrub_time_width = 0;
+    if (scrub_state) {
+        snprintf(scrub_time, sizeof(scrub_time), "%s / %s", left, right);
+        scrub_time_width = pd->graphics->getTextWidth(
+            NULL, scrub_time, strlen(scrub_time), kUTF8Encoding, 0
+        );
+        if (scrub_time_width > state_width) state_width = scrub_time_width;
+    }
     badge_width = state_width + (strcmp(state, "PAUSE") == 0 ? 52 : 28);
+    badge_height = scrub_state ? 64 : 40;
     badge_x = center_x - badge_width / 2;
-    badge_y = center_y - 20;
-    pd->graphics->fillRect(badge_x - 2, badge_y - 2, badge_width + 4, 44, kColorWhite);
-    pd->graphics->fillRect(badge_x, badge_y, badge_width, 40, kColorBlack);
-    pd->graphics->fillRect(badge_x + 2, badge_y + 2, badge_width - 4, 36, kColorWhite);
+    badge_y = center_y - badge_height / 2;
+    pd->graphics->fillRect(
+        badge_x - 2, badge_y - 2, badge_width + 4, badge_height + 4, kColorWhite
+    );
+    pd->graphics->fillRect(badge_x, badge_y, badge_width, badge_height, kColorBlack);
+    pd->graphics->fillRect(
+        badge_x + 2, badge_y + 2, badge_width - 4, badge_height - 4, kColorWhite
+    );
     state_x = badge_x + 14;
     if (strcmp(state, "PAUSE") == 0) {
         pd->graphics->fillRect(badge_x + 13, badge_y + 10, 5, 20, kColorBlack);
         pd->graphics->fillRect(badge_x + 23, badge_y + 10, 5, 20, kColorBlack);
         state_x = badge_x + 39;
     }
-    pd->graphics->drawText(state, strlen(state), kUTF8Encoding, state_x, badge_y + 9);
+    if (scrub_state) {
+        state_x = badge_x + (badge_width - pd->graphics->getTextWidth(
+            NULL, state, strlen(state), kUTF8Encoding, 0
+        )) / 2;
+        pd->graphics->drawText(state, strlen(state), kUTF8Encoding, state_x, badge_y + 7);
+        pd->graphics->drawText(
+            scrub_time, strlen(scrub_time), kUTF8Encoding,
+            badge_x + (badge_width - scrub_time_width) / 2, badge_y + 34
+        );
+    } else {
+        pd->graphics->drawText(state, strlen(state), kUTF8Encoding, state_x, badge_y + 9);
+    }
 }
 
 void jd_ui_draw_paused_overlay(
