@@ -5,6 +5,7 @@
 
 static PlaydateAPI* pd;
 static LCDBitmap* scaled_text_bitmap;
+static LCDBitmap* boot_screen_bitmap;
 
 #define TITLE_TEXT_SCALE 1.15f
 #define META_TEXT_SCALE 0.82f
@@ -75,10 +76,17 @@ static void scaled_text(const char* text, int x, int y, int width, float scale) 
 }
 
 void jd_ui_init(PlaydateAPI* playdate) {
+    const char* bitmap_error = NULL;
     pd = playdate;
     scaled_text_bitmap = pd->graphics->newBitmap(
         SCALED_TEXT_BITMAP_WIDTH, SCALED_TEXT_BITMAP_HEIGHT, kColorClear
     );
+    boot_screen_bitmap = pd->graphics->loadBitmap(
+        "images/jellydate-boot", &bitmap_error
+    );
+    if (boot_screen_bitmap == NULL && bitmap_error != NULL) {
+        pd->system->logToConsole("Could not load Jellydate boot art: %s", bitmap_error);
+    }
 }
 
 void jd_ui_shutdown(void) {
@@ -86,9 +94,30 @@ void jd_ui_shutdown(void) {
         pd->graphics->freeBitmap(scaled_text_bitmap);
         scaled_text_bitmap = NULL;
     }
+    if (boot_screen_bitmap != NULL) {
+        pd->graphics->freeBitmap(boot_screen_bitmap);
+        boot_screen_bitmap = NULL;
+    }
 }
 
 void jd_ui_draw_tuning(const char* detail) {
+    uint32_t phase;
+    int index;
+    if (boot_screen_bitmap != NULL) {
+        (void)detail;
+        phase = (pd->system->getCurrentTimeMilliseconds() / 250) % 3;
+        pd->graphics->clear(kColorWhite);
+        pd->graphics->drawBitmap(boot_screen_bitmap, 0, 0, kBitmapUnflipped);
+        pd->graphics->fillRect(178, 216, 44, 24, kColorWhite);
+        for (index = 0; index < 3; index += 1) {
+            int x = 185 + index * 12;
+            pd->graphics->drawEllipse(x, 222, 7, 7, 1, 0, 360, kColorBlack);
+            if (index == (int)phase) {
+                pd->graphics->fillEllipse(x + 2, 224, 3, 3, 0, 360, kColorBlack);
+            }
+        }
+        return;
+    }
     pd->graphics->clear(kColorWhite);
     text_centered("JELLYDATE", 54);
     text_centered("tuning in...", 91);

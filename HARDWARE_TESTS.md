@@ -6,6 +6,7 @@ The project was initially compile-checked against the official Playdate SDK 3.1.
 |---|---|---|
 | SDK 3.1.1 device + Simulator compile | Passed, 2026-08-25 | clean ARM and macOS bundles produced; Simulator loaded the C API library without crashing |
 | Simulator network permission | Passed, 2026-08-25 | first-run permission accepted; localhost TCP connection established |
+| Simulator branded loading screen | Passed, 2026-09-04 | native 400×240 black-on-white Jellydate wordmark, friendly rabbit-ear CRT artwork, sparkles, dither accents, and animated three-dot loading indicator rendered cleanly at true 1-bit resolution |
 | Simulator real Jellyfin stream | Passed, 2026-08-25 | moving 400×240 ordered-dithered frames; real-time FFmpeg pacing enabled |
 | Simulator pause/resume | Passed, 2026-08-25 | paused at 00:00:14, TCP remained established, playback resumed |
 | Simulator paused overlay | Passed, 2026-08-25 | frozen video remains visible; title and timeline fit their detected letterbox bars, centered pause plaque clears on resume |
