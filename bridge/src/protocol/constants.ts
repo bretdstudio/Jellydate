@@ -1,5 +1,5 @@
 export const MAGIC = Buffer.from('JDAT', 'ascii');
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 export const HEADER_SIZE = 24;
 
 export const SCREEN_WIDTH = 400;
@@ -46,4 +46,11 @@ export enum PacketType {
 export enum PacketFlags {
   None = 0,
   Discontinuity = 1 << 0,
+}
+
+export enum PlaybackStatus {
+  None = 0,
+  Unwatched = 1,
+  InProgress = 2,
+  Completed = 3,
 }

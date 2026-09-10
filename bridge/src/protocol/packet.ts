@@ -3,6 +3,7 @@ import {
   HEADER_SIZE,
   MAGIC,
   PacketType,
+  PlaybackStatus,
   PROTOCOL_VERSION,
 } from './constants.js';
 
@@ -80,6 +81,7 @@ export interface HomeItem {
   readonly subtitle: string;
   readonly positionMs: bigint;
   readonly durationMs: bigint;
+  readonly playbackStatus: PlaybackStatus;
 }
 
 export enum CatalogKind {
@@ -121,7 +123,7 @@ export function encodeHomeItems(items: readonly HomeItem[], hasMore = false): Bu
     const id = truncateUtf8(item.id, 63);
     const title = truncateUtf8(item.title, 95);
     const subtitle = truncateUtf8(item.subtitle, 95);
-    const entry = Buffer.allocUnsafe(3 + id.length + title.length + subtitle.length + 16);
+    const entry = Buffer.allocUnsafe(3 + id.length + title.length + subtitle.length + 17);
     let cursor = 0;
     entry.writeUInt8(id.length, cursor++);
     id.copy(entry, cursor);
@@ -134,6 +136,7 @@ export function encodeHomeItems(items: readonly HomeItem[], hasMore = false): Bu
     cursor += subtitle.length;
     entry.writeBigUInt64BE(item.positionMs, cursor);
     entry.writeBigUInt64BE(item.durationMs, cursor + 8);
+    entry.writeUInt8(item.playbackStatus, cursor + 16);
     return entry;
   });
   return Buffer.concat([Buffer.from([encoded.length, hasMore ? 1 : 0]), ...encoded]);
@@ -145,6 +148,7 @@ export interface ItemDetails {
   readonly overview: string;
   readonly positionMs: bigint;
   readonly durationMs: bigint;
+  readonly playbackStatus: PlaybackStatus;
 }
 
 export function encodeItemDetailsRequest(itemId: string): Buffer {
@@ -166,7 +170,7 @@ export function encodeItemDetails(details: ItemDetails): Buffer {
   const title = truncateUtf8(details.title, 95);
   const subtitle = truncateUtf8(details.subtitle, 95);
   const overview = truncateUtf8(details.overview, 511);
-  const payload = Buffer.allocUnsafe(1 + title.length + 1 + subtitle.length + 2 + overview.length + 16);
+  const payload = Buffer.allocUnsafe(1 + title.length + 1 + subtitle.length + 2 + overview.length + 17);
   let cursor = 0;
   payload.writeUInt8(title.length, cursor++);
   title.copy(payload, cursor);
@@ -180,6 +184,7 @@ export function encodeItemDetails(details: ItemDetails): Buffer {
   cursor += overview.length;
   payload.writeBigUInt64BE(details.positionMs, cursor);
   payload.writeBigUInt64BE(details.durationMs, cursor + 8);
+  payload.writeUInt8(details.playbackStatus, cursor + 16);
   return payload;
 }
 

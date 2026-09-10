@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import type { Config } from './config.js';
 import type { JellyfinClient } from './jellyfin/client.js';
 import { PosterService } from './images/poster.js';
+import { PROTOCOL_VERSION } from './protocol/constants.js';
 import type { PlaybackTelemetry } from './telemetry/playback-telemetry.js';
 
 export function buildApp(
@@ -15,7 +16,7 @@ export function buildApp(
   app.get('/health', async () => ({
     ok: true,
     service: 'jellydate-bridge',
-    protocolVersion: 1,
+    protocolVersion: PROTOCOL_VERSION,
     streamPort: config.streamPort,
   }));
 
@@ -53,7 +54,7 @@ export function buildApp(
     }
     const image = await posters.convert(
       `${item.imageItemId}:${item.imageTag}`,
-      () => jellyfin.getPrimaryImage(item.imageItemId!),
+      () => jellyfin.getPrimaryImage(item.imageItemId!, 1600, 960),
       { width: 400, height: 240, fit: 'contain' },
     );
     return reply

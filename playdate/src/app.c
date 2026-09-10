@@ -351,6 +351,17 @@ static void queue_details_request(const char* item_id) {
     app.mode = JD_APP_DETAILS_LOADING;
 }
 
+static void queue_details_refresh(const char* item_id) {
+    uint8_t payload[64];
+    size_t id_length = item_id == NULL ? 0 : strlen(item_id);
+    if (id_length == 0) return;
+    if (id_length > 63) id_length = 63;
+    payload[0] = (uint8_t)id_length;
+    memcpy(payload + 1, item_id, id_length);
+    queue_packet(JD_PACKET_ITEM_DETAILS_REQUEST, payload, (uint32_t)(id_length + 1));
+    app.details_requested = 1;
+}
+
 static void queue_artwork_request(const char* item_id) {
     uint8_t payload[64];
     size_t id_length = item_id == NULL ? 0 : strlen(item_id);
@@ -398,10 +409,12 @@ static int parse_home_items(JDApp* state, const uint8_t* payload, size_t length)
         memcpy(item->subtitle, payload + cursor, copy);
         item->subtitle[copy] = '\0';
         cursor += field_length;
-        if (length - cursor < 16) return 0;
+        if (length - cursor < 17) return 0;
         item->position_ms = jd_protocol_read_u64(payload + cursor);
         item->duration_ms = jd_protocol_read_u64(payload + cursor + 8);
-        cursor += 16;
+        item->playback_status = payload[cursor + 16];
+        if (item->playback_status > JD_PLAYBACK_COMPLETED) return 0;
+        cursor += 17;
     }
     if (cursor != length) return 0;
     state->home_count = count;
@@ -445,9 +458,11 @@ static int parse_item_details(JDApp* state, const uint8_t* payload, size_t lengt
     detail->overview[copy] = '\0';
     cursor += overview_length;
 
-    if (length - cursor != 16) return 0;
+    if (length - cursor != 17) return 0;
     detail->position_ms = jd_protocol_read_u64(payload + cursor);
     detail->duration_ms = jd_protocol_read_u64(payload + cursor + 8);
+    detail->playback_status = payload[cursor + 16];
+    if (detail->playback_status > JD_PLAYBACK_COMPLETED) return 0;
     return 1;
 }
 
@@ -709,6 +724,14 @@ static void on_packet(
                 snprintf(state->status, sizeof(state->status), "bad item details");
                 state->mode = JD_APP_ERROR;
             } else {
+                if (state->detail_active &&
+                    state->home_selected >= 0 && state->home_selected < state->home_count &&
+                    strcmp(state->home_items[state->home_selected].id, state->detail_id) == 0) {
+                    state->home_items[state->home_selected].position_ms = state->detail.position_ms;
+                    state->home_items[state->home_selected].duration_ms = state->detail.duration_ms;
+                    state->home_items[state->home_selected].playback_status =
+                        state->detail.playback_status;
+                }
                 state->mode = JD_APP_DETAILS;
             }
             break;
@@ -1217,6 +1240,7 @@ int jd_app_update(void* userdata) {
                 snprintf(app.detail.title, sizeof(app.detail.title), "%s", selected->title);
                 app.detail.position_ms = selected->position_ms;
                 app.detail.duration_ms = selected->duration_ms;
+                app.detail.playback_status = selected->playback_status;
                 app.detail_active = 1;
                 app.details_requested = 0;
                 app.artwork_requested = 0;
@@ -1243,11 +1267,13 @@ int jd_app_update(void* userdata) {
             app.detail_active = 0;
             app.details_requested = 0;
             app.artwork_requested = 0;
-            app.mode = JD_APP_CATALOG;
+            app.catalog_requested = 0;
+            queue_catalog_request(app.catalog_kind, app.catalog_parent_id);
         } else if (browse_actions.select) {
             begin_playback(
                 app.detail_id,
-                app.detail.position_ms,
+                app.detail.playback_status == JD_PLAYBACK_COMPLETED
+                    ? 0 : app.detail.position_ms,
                 app.detail.duration_ms
             );
         }
@@ -1278,12 +1304,18 @@ int jd_app_update(void* userdata) {
         if (app.detail_active) {
             app.detail.position_ms = app.position_ms;
             app.detail.duration_ms = app.duration_ms;
+            app.detail.playback_status = app.position_ms > 0
+                ? JD_PLAYBACK_IN_PROGRESS : JD_PLAYBACK_UNWATCHED;
             if (app.home_selected >= 0 && app.home_selected < app.home_count &&
                 strcmp(app.home_items[app.home_selected].id, app.detail_id) == 0) {
                 app.home_items[app.home_selected].position_ms = app.position_ms;
                 app.home_items[app.home_selected].duration_ms = app.duration_ms;
+                app.home_items[app.home_selected].playback_status =
+                    app.detail.playback_status;
             }
             app.mode = JD_APP_DETAILS;
+            app.details_requested = 0;
+            queue_details_refresh(app.detail_id);
         } else {
             app.mode = app.catalog_active ? JD_APP_CATALOG : JD_APP_MENU;
         }

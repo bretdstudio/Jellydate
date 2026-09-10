@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { AudioSampleFormat, PacketFlags, PacketType } from '../src/protocol/constants.js';
+import {
+  AudioSampleFormat,
+  PacketFlags,
+  PacketType,
+  PlaybackStatus,
+} from '../src/protocol/constants.js';
 import {
   CatalogKind,
   decodeCatalogRequest,
@@ -55,6 +60,7 @@ describe('Jellydate packet protocol', () => {
       subtitle: 'Season 2 - A Wobbly Case',
       positionMs: 1_234n,
       durationMs: 5_678n,
+      playbackStatus: PlaybackStatus.InProgress,
     }]);
     let cursor = 2;
     const idLength = payload.readUInt8(cursor++);
@@ -70,6 +76,7 @@ describe('Jellydate packet protocol', () => {
     cursor += subtitleLength;
     expect(payload.readBigUInt64BE(cursor)).toBe(1_234n);
     expect(payload.readBigUInt64BE(cursor + 8)).toBe(5_678n);
+    expect(payload.readUInt8(cursor + 16)).toBe(PlaybackStatus.InProgress);
   });
 
   it('decodes catalog requests and rejects unknown catalogs', () => {
@@ -112,6 +119,7 @@ describe('Jellydate packet protocol', () => {
       overview: 'A tiny television attempts the impossible.',
       positionMs: 12_345n,
       durationMs: 98_765n,
+      playbackStatus: PlaybackStatus.Completed,
     });
     let cursor = 0;
     const titleLength = payload.readUInt8(cursor++);
@@ -127,6 +135,7 @@ describe('Jellydate packet protocol', () => {
     cursor += overviewLength;
     expect(payload.readBigUInt64BE(cursor)).toBe(12_345n);
     expect(payload.readBigUInt64BE(cursor + 8)).toBe(98_765n);
+    expect(payload.readUInt8(cursor + 16)).toBe(PlaybackStatus.Completed);
   });
 
   it('encodes compact artwork and an explicit unavailable fallback', () => {

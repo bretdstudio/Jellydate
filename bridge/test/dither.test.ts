@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PACKED_FRAME_BYTES, SCREEN_HEIGHT, SCREEN_WIDTH } from '../src/protocol/constants.js';
-import { orderedDither8x8 } from '../src/transcoder/dither.js';
+import { atkinsonDither, orderedDither8x8 } from '../src/transcoder/dither.js';
 
 describe('orderedDither8x8', () => {
   it('packs a black frame into 12,000 zero bytes', () => {
@@ -48,6 +48,26 @@ describe('orderedDither8x8', () => {
     const staysWhite = orderedDither8x8(gray, SCREEN_WIDTH, SCREEN_HEIGHT, previousWhite, 8);
     expect(staysBlack[0]! & 0x80).toBe(0);
     expect(staysWhite[0]! & 0x80).toBe(0x80);
+  });
+});
+
+describe('atkinsonDither', () => {
+  it('packs solid black and white artwork without introducing noise', () => {
+    const black = atkinsonDither(new Uint8Array(96 * 144), 96, 144);
+    const white = atkinsonDither(new Uint8Array(96 * 144).fill(255), 96, 144);
+    expect(black).toHaveLength(96 / 8 * 144);
+    expect(black.every((byte) => byte === 0)).toBe(true);
+    expect(white.every((byte) => byte === 0xff)).toBe(true);
+  });
+
+  it('produces a deterministic, distributed pattern for static mid-gray artwork', () => {
+    const gray = new Uint8Array(96 * 144).fill(128);
+    const first = atkinsonDither(gray, 96, 144);
+    const second = atkinsonDither(gray, 96, 144);
+    expect(first).toEqual(second);
+    const setBits = first.reduce((sum, byte) => sum + popcount(byte), 0);
+    expect(setBits).toBeGreaterThan(96 * 144 * 0.35);
+    expect(setBits).toBeLessThan(96 * 144 * 0.65);
   });
 });
 

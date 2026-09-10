@@ -7,6 +7,7 @@ static PlaydateAPI* pd;
 static LCDBitmap* scaled_text_bitmap;
 static LCDBitmap* boot_screen_bitmap;
 static LCDBitmap* detail_artwork_bitmap;
+static LCDBitmap* home_icon_bitmaps[4][2];
 
 #define TITLE_TEXT_SCALE 1.15f
 #define META_TEXT_SCALE 0.82f
@@ -60,6 +61,20 @@ static void progress(int x, int y, int width, int height, uint64_t position_ms, 
     }
 }
 
+static void playback_mark(uint8_t status, int x, int y) {
+    if (status == JD_PLAYBACK_UNWATCHED) {
+        pd->graphics->drawEllipse(x, y, 12, 12, 2, 0, 360, kColorBlack);
+    } else if (status == JD_PLAYBACK_IN_PROGRESS) {
+        pd->graphics->fillEllipse(x, y, 12, 12, 0, 360, kColorBlack);
+        pd->graphics->fillRect(x + 6, y, 6, 12, kColorWhite);
+        pd->graphics->drawEllipse(x, y, 12, 12, 2, 0, 360, kColorBlack);
+    } else if (status == JD_PLAYBACK_COMPLETED) {
+        pd->graphics->drawRect(x, y, 13, 13, kColorBlack);
+        pd->graphics->drawLine(x + 2, y + 7, x + 5, y + 10, 2, kColorBlack);
+        pd->graphics->drawLine(x + 5, y + 10, x + 11, y + 3, 2, kColorBlack);
+    }
+}
+
 static void scaled_text(const char* text, int x, int y, int width, float scale) {
     int source_width;
     if (scaled_text_bitmap == NULL || text == NULL || text[0] == '\0') return;
@@ -79,7 +94,15 @@ static void scaled_text(const char* text, int x, int y, int width, float scale) 
 }
 
 void jd_ui_init(PlaydateAPI* playdate) {
+    static const char* home_icon_names[4][2] = {
+        { "images/home-continue-normal", "images/home-continue-selected" },
+        { "images/home-movies-normal", "images/home-movies-selected" },
+        { "images/home-tv-normal", "images/home-tv-selected" },
+        { "images/home-recent-normal", "images/home-recent-selected" }
+    };
     const char* bitmap_error = NULL;
+    int icon;
+    int state;
     pd = playdate;
     scaled_text_bitmap = pd->graphics->newBitmap(
         SCALED_TEXT_BITMAP_WIDTH, SCALED_TEXT_BITMAP_HEIGHT, kColorClear
@@ -93,9 +116,25 @@ void jd_ui_init(PlaydateAPI* playdate) {
     if (boot_screen_bitmap == NULL && bitmap_error != NULL) {
         pd->system->logToConsole("Could not load Jellydate boot art: %s", bitmap_error);
     }
+    for (icon = 0; icon < 4; icon += 1) {
+        for (state = 0; state < 2; state += 1) {
+            bitmap_error = NULL;
+            home_icon_bitmaps[icon][state] = pd->graphics->loadBitmap(
+                home_icon_names[icon][state], &bitmap_error
+            );
+            if (home_icon_bitmaps[icon][state] == NULL && bitmap_error != NULL) {
+                pd->system->logToConsole(
+                    "Could not load home icon %s: %s",
+                    home_icon_names[icon][state], bitmap_error
+                );
+            }
+        }
+    }
 }
 
 void jd_ui_shutdown(void) {
+    int icon;
+    int state;
     if (scaled_text_bitmap != NULL) {
         pd->graphics->freeBitmap(scaled_text_bitmap);
         scaled_text_bitmap = NULL;
@@ -107,6 +146,14 @@ void jd_ui_shutdown(void) {
     if (detail_artwork_bitmap != NULL) {
         pd->graphics->freeBitmap(detail_artwork_bitmap);
         detail_artwork_bitmap = NULL;
+    }
+    for (icon = 0; icon < 4; icon += 1) {
+        for (state = 0; state < 2; state += 1) {
+            if (home_icon_bitmaps[icon][state] != NULL) {
+                pd->graphics->freeBitmap(home_icon_bitmaps[icon][state]);
+                home_icon_bitmaps[icon][state] = NULL;
+            }
+        }
     }
 }
 
@@ -138,54 +185,20 @@ void jd_ui_draw_tuning(const char* detail) {
     antenna(200, 181);
 }
 
-static void draw_continue_icon(int x, int y) {
-    pd->graphics->drawEllipse(x + 2, y + 1, 38, 38, 2, 0, 360, kColorBlack);
-    pd->graphics->fillTriangle(x + 17, y + 10, x + 17, y + 30, x + 31, y + 20, kColorBlack);
-    pd->graphics->drawLine(x + 5, y + 42, x + 39, y + 42, 2, kColorBlack);
-    pd->graphics->fillRect(x + 5, y + 40, 14, 5, kColorBlack);
-}
-
-static void draw_movie_icon(int x, int y) {
-    pd->graphics->fillRect(x + 1, y + 3, 42, 9, kColorBlack);
-    pd->graphics->drawLine(x + 7, y + 3, x + 14, y + 11, 2, kColorWhite);
-    pd->graphics->drawLine(x + 21, y + 3, x + 28, y + 11, 2, kColorWhite);
-    pd->graphics->drawLine(x + 35, y + 3, x + 42, y + 11, 2, kColorWhite);
-    pd->graphics->drawRect(x + 1, y + 14, 42, 28, kColorBlack);
-    pd->graphics->drawLine(x + 1, y + 21, x + 43, y + 21, 2, kColorBlack);
-    pd->graphics->fillTriangle(x + 18, y + 25, x + 18, y + 37, x + 28, y + 31, kColorBlack);
-}
-
-static void draw_tv_icon(int x, int y) {
-    pd->graphics->drawLine(x + 22, y + 9, x + 11, y, 2, kColorBlack);
-    pd->graphics->drawLine(x + 22, y + 9, x + 34, y, 2, kColorBlack);
-    pd->graphics->drawRect(x + 1, y + 9, 43, 31, kColorBlack);
-    pd->graphics->drawRect(x + 5, y + 13, 29, 22, kColorBlack);
-    pd->graphics->fillEllipse(x + 37, y + 15, 4, 4, 0, 360, kColorBlack);
-    pd->graphics->fillEllipse(x + 37, y + 26, 4, 4, 0, 360, kColorBlack);
-    pd->graphics->drawLine(x + 8, y + 43, x + 15, y + 39, 2, kColorBlack);
-    pd->graphics->drawLine(x + 37, y + 43, x + 30, y + 39, 2, kColorBlack);
-}
-
-static void draw_recent_icon(int x, int y) {
-    pd->graphics->drawEllipse(x + 2, y + 10, 31, 31, 2, 0, 360, kColorBlack);
-    pd->graphics->drawLine(x + 17, y + 25, x + 17, y + 16, 2, kColorBlack);
-    pd->graphics->drawLine(x + 17, y + 25, x + 25, y + 29, 2, kColorBlack);
-    pd->graphics->drawLine(x + 38, y, x + 38, y + 16, 2, kColorBlack);
-    pd->graphics->drawLine(x + 30, y + 8, x + 46, y + 8, 2, kColorBlack);
-    pd->graphics->drawLine(x + 33, y + 3, x + 43, y + 13, 1, kColorBlack);
-    pd->graphics->drawLine(x + 43, y + 3, x + 33, y + 13, 1, kColorBlack);
-}
-
-static void draw_home_icon(int index, int x, int y) {
-    if (index == 0) draw_continue_icon(x, y);
-    else if (index == 1) draw_movie_icon(x, y);
-    else if (index == 2) draw_tv_icon(x, y);
-    else draw_recent_icon(x, y);
+static void draw_home_icon(int index, int x, int y, int active) {
+    LCDBitmap* icon = home_icon_bitmaps[index][active ? 1 : 0];
+    if (icon != NULL) {
+        pd->graphics->drawBitmap(icon, x, y, kBitmapUnflipped);
+    } else {
+        pd->graphics->drawRect(x + 5, y + 5, 44, 44, kColorBlack);
+        pd->graphics->drawText("?", 1, kUTF8Encoding, x + 22, y + 17);
+    }
 }
 
 void jd_ui_draw_menu(int selected) {
     static const char* title_top[] = { "CONTINUE", "MOVIES", "TV SHOWS", "RECENTLY" };
     static const char* title_bottom[] = { "WATCHING", "", "", "ADDED" };
+    int lively_frame = (int)((pd->system->getCurrentTimeMilliseconds() / 400) % 2);
     int index;
     pd->graphics->clear(kColorWhite);
     pd->graphics->drawText("JELLYDATE", 9, kUTF8Encoding, 12, 7);
@@ -196,11 +209,10 @@ void jd_ui_draw_menu(int selected) {
         if (index == selected) {
             pd->graphics->drawRect(x, y, 191, 69, kColorBlack);
             pd->graphics->drawRect(x + 2, y + 2, 187, 65, kColorBlack);
-            pd->graphics->fillRect(x + 7, y + 7, 5, 5, kColorBlack);
         } else {
             pd->graphics->drawRect(x, y, 191, 69, kColorBlack);
         }
-        draw_home_icon(index, x + 13, y + 13);
+        draw_home_icon(index, x + 9, y + 8, index == selected && lively_frame);
         if (title_bottom[index][0] == '\0') {
             scaled_text(title_top[index], x + 67, y + 23, 112, 0.98f);
         } else {
@@ -342,9 +354,15 @@ void jd_ui_draw_catalog(
             pd->graphics->drawRect(7, y - 1, 386, 48, kColorBlack);
             pd->graphics->drawText(">", 1, kUTF8Encoding, 12, y + 5);
         }
-        scaled_text(item->title, 29, y, 350, TITLE_TEXT_SCALE);
+        scaled_text(
+            item->title, 29, y,
+            item->playback_status == JD_PLAYBACK_NONE ? 350 : 329,
+            TITLE_TEXT_SCALE
+        );
         scaled_text(item->subtitle, 29, y + 23, 350, META_TEXT_SCALE);
-        if (item->duration_ms > 0) {
+        playback_mark(item->playback_status, 368, y + 6);
+        if (item->playback_status == JD_PLAYBACK_IN_PROGRESS &&
+            item->duration_ms > 0) {
             progress(292, y + 40, 87, 5, item->position_ms, item->duration_ms);
         }
     }
@@ -445,6 +463,7 @@ void jd_ui_draw_details(
 ) {
     char position[16];
     char duration[16];
+    uint64_t display_position;
     int duration_width;
     const char* action;
 
@@ -460,8 +479,10 @@ void jd_ui_draw_details(
     scaled_text(details->title, 12, 36, 376, TITLE_TEXT_SCALE);
     draw_detail_artwork(artwork);
     scaled_text(details->subtitle, 124, 61, 264, META_TEXT_SCALE);
-    progress(124, 87, 264, 7, details->position_ms, details->duration_ms);
-    format_time(position, sizeof(position), details->position_ms);
+    display_position = details->playback_status == JD_PLAYBACK_COMPLETED
+        ? details->duration_ms : details->position_ms;
+    progress(124, 87, 264, 7, display_position, details->duration_ms);
+    format_time(position, sizeof(position), display_position);
     format_time(duration, sizeof(duration), details->duration_ms);
     duration_width = pd->graphics->getTextWidth(
         NULL, duration, strlen(duration), kUTF8Encoding, 0
@@ -478,7 +499,13 @@ void jd_ui_draw_details(
         124, 148, 264, 62, kWrapWord, kAlignTextLeft
     );
 
-    action = details->position_ms > 0 ? "A: RESUME" : "A: WATCH";
+    if (details->playback_status == JD_PLAYBACK_COMPLETED) {
+        action = "A: WATCH AGAIN";
+    } else if (details->playback_status == JD_PLAYBACK_IN_PROGRESS) {
+        action = "A: RESUME";
+    } else {
+        action = "A: WATCH";
+    }
     pd->graphics->drawText(action, strlen(action), kUTF8Encoding, 12, 222);
     pd->graphics->drawText("B: BACK", 7, kUTF8Encoding, 316, 222);
 }

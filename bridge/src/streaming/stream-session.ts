@@ -10,6 +10,8 @@ import {
   HEADER_SIZE,
   PacketFlags,
   PacketType,
+  PlaybackStatus,
+  PROTOCOL_VERSION,
 } from '../protocol/constants.js';
 import {
   CatalogKind,
@@ -35,6 +37,7 @@ import { WireBudget } from './wire-budget.js';
 
 const AUDIO_CHUNK_DURATION_MS = 40;
 const MAX_AUDIO_LEAD_MS = 120n;
+const ARTWORK_SOURCE_SCALE = 4;
 
 function formatCatalogSubtitle(kind: CatalogKind, item: JellydateItem): string {
   if (kind === CatalogKind.Tv) {
@@ -44,8 +47,7 @@ function formatCatalogSubtitle(kind: CatalogKind, item: JellydateItem): string {
     return '';
   }
   if (kind === CatalogKind.TvEpisodes) {
-    const number = item.indexNumber !== null ? `EPISODE ${item.indexNumber}` : 'EPISODE';
-    return item.positionMs > 0 ? `${number} - RESUME` : number;
+    return item.indexNumber !== null ? `EPISODE ${item.indexNumber}` : 'EPISODE';
   }
   return item.seriesName
     ? [item.seasonName, item.name].filter(Boolean).join(' - ')
@@ -54,10 +56,20 @@ function formatCatalogSubtitle(kind: CatalogKind, item: JellydateItem): string {
 
 function formatDetailsSubtitle(item: JellydateItem): string {
   if (item.type === 'Episode') {
-    const episode = item.indexNumber !== null ? `EPISODE ${item.indexNumber}` : null;
-    return [item.seriesName, item.seasonName, episode].filter(Boolean).join(' - ');
+    const season = item.parentIndexNumber !== null ? `S${item.parentIndexNumber}` : item.seasonName;
+    const episode = item.indexNumber !== null ? `E${item.indexNumber}` : null;
+    return [item.seriesName, [season, episode].filter(Boolean).join(' ')]
+      .filter(Boolean)
+      .join(' - ');
   }
   return [item.type, item.productionYear].filter(Boolean).join(' - ');
+}
+
+function playbackStatus(item: JellydateItem): PlaybackStatus {
+  if (item.type !== 'Movie' && item.type !== 'Episode') return PlaybackStatus.None;
+  if (item.played || item.playedPercentage >= 90) return PlaybackStatus.Completed;
+  if (item.positionMs > 0) return PlaybackStatus.InProgress;
+  return PlaybackStatus.Unwatched;
 }
 
 interface ActiveStream {
@@ -99,7 +111,7 @@ export class StreamSession {
   ) {}
 
   start(): void {
-    this.send(PacketType.Hello, Buffer.from('Jellydate Bridge/0.1 protocol/1'));
+    this.send(PacketType.Hello, Buffer.from(`Jellydate Bridge/0.1 protocol/${PROTOCOL_VERSION}`));
     this.socket.on('data', (chunk) => {
       try {
         for (const packet of this.parser.push(chunk)) {
@@ -226,6 +238,7 @@ export class StreamSession {
         subtitle: formatCatalogSubtitle(kind, item),
         positionMs: BigInt(item.positionMs),
         durationMs: BigInt(item.durationMs),
+        playbackStatus: playbackStatus(item),
       })), hasMore),
     );
   }
@@ -238,11 +251,17 @@ export class StreamSession {
       overview: item.overview || 'No description available.',
       positionMs: BigInt(item.positionMs),
       durationMs: BigInt(item.durationMs),
+      playbackStatus: playbackStatus(item),
     }));
   }
 
   private async sendItemArtwork(itemId: string): Promise<void> {
     try {
+      // Never introduce an image fetch or conversion while the video pipeline is active.
+      if (this.active) {
+        this.send(PacketType.ItemArtworkResponse, encodeItemArtwork());
+        return;
+      }
       const item = await this.jellyfin.getItem(itemId);
       if (!item.imageItemId || !item.imageTag) {
         this.send(PacketType.ItemArtworkResponse, encodeItemArtwork());
@@ -252,8 +271,8 @@ export class StreamSession {
         `${item.imageItemId}:${item.imageTag}`,
         () => this.jellyfin.getPrimaryImage(
           item.imageItemId!,
-          DETAIL_ARTWORK_WIDTH,
-          DETAIL_ARTWORK_HEIGHT,
+          DETAIL_ARTWORK_WIDTH * ARTWORK_SOURCE_SCALE,
+          DETAIL_ARTWORK_HEIGHT * ARTWORK_SOURCE_SCALE,
         ),
         {
           width: DETAIL_ARTWORK_WIDTH,

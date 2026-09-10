@@ -15,12 +15,20 @@
 #define JD_TEXT_ENTRY_DONE_INDEX (JD_TEXT_ENTRY_CHARACTER_COUNT + 2)
 #define JD_TEXT_ENTRY_ITEM_COUNT (JD_TEXT_ENTRY_CHARACTER_COUNT + 3)
 
+typedef enum {
+    JD_PLAYBACK_NONE = 0,
+    JD_PLAYBACK_UNWATCHED = 1,
+    JD_PLAYBACK_IN_PROGRESS = 2,
+    JD_PLAYBACK_COMPLETED = 3
+} JDPlaybackStatus;
+
 typedef struct {
     char id[64];
     char title[96];
     char subtitle[96];
     uint64_t position_ms;
     uint64_t duration_ms;
+    uint8_t playback_status;
 } JDHomeItem;
 
 typedef struct {
@@ -29,6 +37,7 @@ typedef struct {
     char overview[512];
     uint64_t position_ms;
     uint64_t duration_ms;
+    uint8_t playback_status;
 } JDItemDetails;
 
 typedef enum {

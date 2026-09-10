@@ -15,7 +15,7 @@ Research baseline: **August 25, 2026**.
 - Video is held in an eight-frame fixed queue. Playback starts after at least six video frames and 200 ms of audio are ready; the audio playhead then selects eligible video frames. The hardware profile is fixed at 5 FPS, with temporal hysteresis and literal/repeat delta records keeping native-resolution traffic beneath the transport ceiling.
 - The C API exposes crank angle change but not Lua's accelerated-change value. Jellydate derives acceleration from degrees moved per update and commits a seek after 500 ms of inactivity.
 - The Playdate has 16 MB RAM. The eight-frame video queue costs 96 KB. The current three-second 44.1 kHz output-sample ring costs 256 KiB. Both are modest, but the implementation keeps explicit fixed bounds.
-- Detail screens keep one fixed 1,728-byte 96×144 poster buffer. Artwork arrives only after opening an item, so list navigation never competes with a page of image downloads.
+- Detail screens keep one fixed 1,728-byte 96×144 poster buffer. The Bridge requests a 4× source from Jellyfin, auto-orients it, reduces it with Lanczos3, normalizes contrast, lightly sharpens it, and uses static Atkinson error diffusion for finer 1-bit detail than the motion-stable video dither. The packed result is cached in memory and on disk by image tag and processing version. Artwork arrives only after opening an item and is refused while a stream is active, so list navigation and playback never compete with image downloads.
 
 ### Jellyfin
 
@@ -77,13 +77,14 @@ playdate/src/ui.*         intentionally tiny pocket-TV presentation
 6. **Bound audio lead at the Bridge.** Independent FFmpeg pipes can become uneven even when both average real time. Audio is held to at most 120 ms ahead of the last transmitted video timestamp so it cannot fill the socket and make video arrive in bursts.
 7. **Pace presentation in Jellydate, not FFmpeg.** FFmpeg real-time input mode tried to catch up after pipe pressure, producing visible frame clusters despite a correct average rate. The Bridge now schedules frames against a monotonic clock and exposes maximum frame-gap telemetry.
 8. **Artwork belongs on details, not list rows.** The Bridge produces a cached 96×144 one-bit poster only for the opened item. The small fixed packet keeps browsing responsive, and missing images fall back to a native Jellydate TV illustration.
+9. **Playback state is explicit.** Catalog and detail records carry unwatched, in-progress, completed, or non-playable status instead of inferring state from a timestamp. After playback stops, the detail request is sequenced behind Jellyfin's stop report, and returning to the catalog reloads the current page without losing its selection.
+10. **Menu personality stays native and cheap.** The home icons are compact 54×54 one-bit sprites derived directly from the approved friendly CRT mascot artwork. Only the selected tile alternates between two restrained 400 ms frames, adding character without affecting playback or network work.
 
 ## Next implementation steps
 
-1. Refresh and clarify watched/progress state after returning from playback.
-2. Add an optional on-device debug overlay for live stream telemetry.
-3. Extend the physical-hardware endurance gate from the initial real-time stream to a full movie.
-4. Package the Bridge and Playdate build for a cleaner installation flow.
+1. Add an optional on-device debug overlay for live stream telemetry.
+2. Extend the physical-hardware endurance gate from the initial real-time stream to a full movie.
+3. Package the Bridge and Playdate build for a cleaner installation flow.
 
 ## Reliability telemetry
 

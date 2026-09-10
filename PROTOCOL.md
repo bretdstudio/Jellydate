@@ -1,4 +1,4 @@
-# Jellydate Stream Protocol (JDSP) v1
+# Jellydate Stream Protocol (JDSP) v2
 
 JDSP is a small, big-endian, length-prefixed protocol over one TCP connection. TCP is a byte stream: one read may contain half a header, half a payload, one packet, or several packets. Both implementations preserve parser state across reads.
 
@@ -9,7 +9,7 @@ Every packet starts with 24 bytes:
 | Offset | Size | Field | Meaning |
 |---:|---:|---|---|
 | 0 | 4 | magic | ASCII `JDAT` |
-| 4 | 1 | version | `1` |
+| 4 | 1 | version | `2` |
 | 5 | 1 | type | packet type below |
 | 6 | 2 | flags | bit field |
 | 8 | 4 | payload length | unsigned bytes; maximum 1 MiB on Bridge, 12,000 on the current client |
@@ -53,11 +53,11 @@ Flag bit 0 (`DISCONTINUITY`) means buffered media from the prior timeline must b
 
 `HOME_REQUEST` begins with `u8 catalog_kind`, followed by `u8 parent_id_length + parent_id`, then a big-endian `u16 start_index`. Continue Watching and Recently Added use a zero-length parent id. Movie and TV-series requests use a single `A`–`Z` bucket or `#` for titles sorted before A; seasons require a series id and episodes require a season id. Every catalog advances the index in eight-item pages. Legacy requests that omit the index remain accepted and start at zero.
 
-`HOME_RESPONSE` begins with `u8 item_count` and `u8 catalog_flags`; flag bit 0 means another page exists. Each item then contains three length-prefixed UTF-8 fields—`u8 id_length + id`, `u8 title_length + title`, and `u8 subtitle_length + subtitle`—followed by big-endian `u64 position_ms` and `u64 duration_ms`. The bridge returns at most eight entries. Continue Watching preserves Jellyfin resume positions; Movies and TV series are alphabetized within the requested letter bucket; TV drill-down returns seasons and then playable episodes; and Recently Added mixes new movies and episodes. Additional pages load automatically when navigation crosses a page boundary. All playable entries include any saved position available from Jellyfin user data.
+`HOME_RESPONSE` begins with `u8 item_count` and `u8 catalog_flags`; flag bit 0 means another page exists. Each item then contains three length-prefixed UTF-8 fields—`u8 id_length + id`, `u8 title_length + title`, and `u8 subtitle_length + subtitle`—followed by big-endian `u64 position_ms`, `u64 duration_ms`, and `u8 playback_status`. Playback status is `0` for non-playable hierarchy rows, `1` for unwatched, `2` for in progress, and `3` for completed. The bridge returns at most eight entries. Continue Watching preserves Jellyfin resume positions; Movies and TV series are alphabetized within the requested letter bucket; TV drill-down returns seasons and then playable episodes; and Recently Added mixes new movies and episodes. Additional pages load automatically when navigation crosses a page boundary. All playable entries include saved user state from Jellyfin.
 
 ### ITEM_DETAILS payloads
 
-`ITEM_DETAILS_REQUEST` contains `u8 item_id_length + item_id`. `ITEM_DETAILS_RESPONSE` contains `u8 title_length + title`, `u8 subtitle_length + subtitle`, `u16 overview_length + overview`, then big-endian `u64 position_ms` and `u64 duration_ms`. The subtitle provides compact media context such as movie type and year or series, season, and episode number. Playdate uses the saved position to label the primary action `RESUME` and begin playback at that point.
+`ITEM_DETAILS_REQUEST` contains `u8 item_id_length + item_id`. `ITEM_DETAILS_RESPONSE` contains `u8 title_length + title`, `u8 subtitle_length + subtitle`, `u16 overview_length + overview`, then big-endian `u64 position_ms`, `u64 duration_ms`, and the same `u8 playback_status` used by catalog entries. The subtitle provides compact media context such as movie type and year or `SERIES - S1 E2`. Playdate uses the explicit status to label the primary action `WATCH`, `RESUME`, or `WATCH AGAIN`; completed items restart from the beginning.
 
 ### ITEM_ARTWORK payloads
 

@@ -55,3 +55,49 @@ export function orderedDither8x8(
   }
   return packed;
 }
+
+// Static artwork benefits from error diffusion: unlike video, it never shimmers
+// between frames, and the propagated error preserves faces, lettering and fine
+// tonal changes much better than a repeating ordered pattern.
+export function atkinsonDither(
+  gray: Uint8Array,
+  width: number,
+  height: number,
+): Buffer {
+  if (width < 8 || width % 8 !== 0 || height < 1) {
+    throw new Error('Dither dimensions require a positive height and a width divisible by 8');
+  }
+  if (gray.length !== width * height) {
+    throw new Error(`Expected ${width * height} grayscale bytes, got ${gray.length}`);
+  }
+
+  const pixels = Float32Array.from(gray);
+  const packedRowBytes = width / 8;
+  const packed = Buffer.alloc(packedRowBytes * height);
+
+  const diffuse = (x: number, y: number, error: number): void => {
+    if (x < 0 || x >= width || y < 0 || y >= height) return;
+    const index = y * width + x;
+    pixels[index] = Math.max(0, Math.min(255, (pixels[index] ?? 0) + error));
+  };
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = y * width + x;
+      const original = pixels[index] ?? 0;
+      const white = original >= 128;
+      const quantized = white ? 255 : 0;
+      if (white) packed[y * packedRowBytes + (x >> 3)]! |= 0x80 >> (x & 7);
+
+      const error = (original - quantized) / 8;
+      diffuse(x + 1, y, error);
+      diffuse(x + 2, y, error);
+      diffuse(x - 1, y + 1, error);
+      diffuse(x, y + 1, error);
+      diffuse(x + 1, y + 1, error);
+      diffuse(x, y + 2, error);
+    }
+  }
+
+  return packed;
+}
